@@ -138,9 +138,10 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     const copies = imageFiles[0]?.copies || 1;
     const isColor = imageFiles.some((f) => f.color);
     const rate = isColor ? pricePerColor : pricePerBw;
-    // Fit into 1 page means strictly 1 physical sheet per copy!
-    const rawSheets = 1;
-    const sheetsPerCopy = 1;
+    const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+    const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+    const duplex = imageFiles[0]?.duplex ?? false;
+    const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
     const total = sheetsPerCopy * copies * rate;
 
     totalPrintCost += total;
@@ -247,9 +248,16 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
               <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
                 <span>Select Grid Layout on A4 Sheet:</span>
                 <span className="text-[10px] text-purple-600 font-semibold">
-                  {(imageFiles[0]?.pagesPerSheet || 4) > imageFiles.length
-                    ? `${(imageFiles[0]?.pagesPerSheet || 4) - imageFiles.length} extra spot(s) remain empty`
-                    : '1 A4 Sheet fit'}
+                  {(() => {
+                    const grid = imageFiles[0]?.pagesPerSheet || 4;
+                    const sheets = Math.max(1, Math.ceil(imageFiles.length / grid));
+                    if (imageFiles.length > grid) {
+                      return `${sheets} A4 sheets (${imageFiles.length} photos)`;
+                    } else if (grid > imageFiles.length) {
+                      return `${grid - imageFiles.length} extra spot(s) blank (1 A4 sheet)`;
+                    }
+                    return '1 A4 Sheet fit';
+                  })()}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-1.5">

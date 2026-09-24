@@ -123,8 +123,10 @@ export default function CustomerApp() {
       const copies = imageFiles[0]?.copies || 1;
       const isColor = imageFiles.some((f) => f.color);
       const rate = isColor ? pricePerColor : pricePerBw;
-      const rawSheets = 1;
-      const sheetsPerCopy = 1;
+      const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+      const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+      const duplex = imageFiles[0]?.duplex ?? false;
+      const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
       printTotal += sheetsPerCopy * copies * rate;
       totalCopies += copies;
       totalPhysicalSheets += sheetsPerCopy * copies;

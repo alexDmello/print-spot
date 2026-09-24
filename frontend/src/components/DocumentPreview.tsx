@@ -27,12 +27,35 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   onProceed,
   onGridChange,
 }) => {
-  const [selectedFileId, setSelectedFileId] = useState<string>(files[0]?.id || '');
+  const isImageFile = (f: UploadedDocument) => {
+    const fileExt = (f.fileName.split('.').pop() || '').toLowerCase();
+    return (
+      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(fileExt) ||
+      (f.mimeType?.startsWith('image/') ?? false)
+    );
+  };
+
+  const imageFiles = files.filter(isImageFile);
+  const otherFiles = files.filter((f) => !isImageFile(f));
+  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+
+  const [selectedFileId, setSelectedFileId] = useState<string>(
+    isCombinedImages ? '__photo_sheet__' : files[0]?.id || ''
+  );
   const [selectedPage, setSelectedPage] = useState(1);
   const [pdfViewMode, setPdfViewMode] = useState<'canvas' | 'native'>('canvas');
 
+  // If combined images is active, determine if inspecting Photo Sheet or another document (e.g. PDF)
+  const isPreviewingPhotoSheet = isCombinedImages && (
+    selectedFileId === '__photo_sheet__' ||
+    imageFiles.some((img) => img.id === selectedFileId) ||
+    !otherFiles.some((doc) => doc.id === selectedFileId)
+  );
+
   // Active file being previewed
-  const activeFile = files.find((f) => f.id === selectedFileId) || files[0];
+  const activeFile = isPreviewingPhotoSheet
+    ? imageFiles[0]
+    : files.find((f) => f.id === selectedFileId) || otherFiles[0] || files[0];
   const activeFileIndex = files.findIndex((f) => f.id === activeFile?.id);
 
   // Parsed content states for non-image formats
@@ -50,13 +73,14 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const fileName = activeFile?.fileName || '';
   const fileUrl = activeFile?.fileUrl || '';
   const ext = (fileName.split('.').pop() || '').toLowerCase();
-  const isPdf = ext === 'pdf' || activeFile?.mimeType === 'application/pdf';
-  const isImage =
+  const isPdf = !isPreviewingPhotoSheet && (ext === 'pdf' || activeFile?.mimeType === 'application/pdf');
+  const isImage = isPreviewingPhotoSheet || (
     ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
-    activeFile?.mimeType?.startsWith('image/');
-  const isSpreadsheet = ['xls', 'xlsx', 'csv'].includes(ext);
-  const isWordDoc = ['doc', 'docx'].includes(ext);
-  const isCodeOrText = ['txt', 'md', 'json', 'js', 'py', 'ts', 'log', 'html'].includes(ext);
+    (activeFile?.mimeType?.startsWith('image/') ?? false)
+  );
+  const isSpreadsheet = !isPreviewingPhotoSheet && ['xls', 'xlsx', 'csv'].includes(ext);
+  const isWordDoc = !isPreviewingPhotoSheet && ['doc', 'docx'].includes(ext);
+  const isCodeOrText = !isPreviewingPhotoSheet && ['txt', 'md', 'json', 'js', 'py', 'ts', 'log', 'html'].includes(ext);
 
   // Normalize URL to same-origin path to prevent CORS/iframe cross-origin issues
   const getResolvedUrl = (url?: string) => {
@@ -68,28 +92,22 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const resolvedUrl = getResolvedUrl(fileUrl);
 
-  const isImageFile = (f: UploadedDocument) => {
-    const fileExt = (f.fileName.split('.').pop() || '').toLowerCase();
-    return (
-      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(fileExt) ||
-      (f.mimeType?.startsWith('image/') ?? false)
-    );
-  };
-
-  const imageFiles = files.filter(isImageFile);
-  const otherFiles = files.filter((f) => !isImageFile(f));
-  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
-
-  const currentGrid = isCombinedImages
-    ? (imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 1)
+  const currentGrid = isPreviewingPhotoSheet
+    ? (imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4)
     : (activeFile?.pagesPerSheet || 1);
 
-  // If user selects "Fit into 1 Page", preview MUST have strictly 1 page!
-  const effectivePageCount = isCombinedImages
-    ? 1
+  // Calculate physical sheets required for Photo Sheet (e.g. 10 photos on 9-in-1 = 2 sheets)
+  const photoSheetPages = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+
+  const effectivePageCount = isPreviewingPhotoSheet
+    ? photoSheetPages
     : (isPdf && pdfDoc?.numPages)
     ? pdfDoc.numPages
     : (activeFile?.pageCount || 1);
+
+  // Color mode detection for Photo Sheet vs standalone document
+  const isPhotoSheetColor = imageFiles.some((f) => f.color !== false);
+  const isCurrentItemColor = isPreviewingPhotoSheet ? isPhotoSheetColor : !!activeFile?.color;
 
   // Proportional grid layouts on portrait A4 paper sheet
   const getGridClass = (grid: number) => {
@@ -253,7 +271,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   // Dynamic filter style for Black & White simulation
   const colorFilterStyle: React.CSSProperties = {
-    filter: !activeFile?.color ? 'grayscale(100%) contrast(120%)' : 'none',
+    filter: !isCurrentItemColor ? 'grayscale(100%) contrast(120%)' : 'none',
   };
 
   if (!activeFile) {
@@ -272,17 +290,45 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         </p>
       </div>
 
-      {/* Multi-File Switcher Tabs (If multiple documents uploaded and not combined into single sheet) */}
-      {files.length > 1 && !isCombinedImages && (
+      {/* Document / Photo Sheet Switcher Tabs */}
+      {((isCombinedImages && otherFiles.length > 0) || (!isCombinedImages && files.length > 1)) && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-0.5">
-            <span>Select Document to Inspect:</span>
-            <span>{files.length} files queued</span>
+            <span>Select Item to Inspect:</span>
+            <span>
+              {isCombinedImages
+                ? `1 Photo Sheet + ${otherFiles.length} document(s)`
+                : `${files.length} files queued`}
+            </span>
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-            {files.map((f, idx) => {
-              const isSelected = f.id === activeFile.id;
+            {/* If combined images, first tab is the Photo Sheet */}
+            {isCombinedImages && (
+              <button
+                type="button"
+                onClick={() => setSelectedFileId('__photo_sheet__')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all shrink-0 cursor-pointer ${
+                  isPreviewingPhotoSheet
+                    ? 'bg-purple-700 text-white shadow-xs'
+                    : 'bg-white border border-purple-200 text-purple-800 hover:bg-purple-50'
+                }`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                <span>Photo Sheet ({imageFiles.length} Photos)</span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
+                    isPreviewingPhotoSheet ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
+                  }`}
+                >
+                  {photoSheetPages} {photoSheetPages === 1 ? 'A4 sheet' : 'A4 sheets'}
+                </span>
+              </button>
+            )}
+
+            {/* Other files (or all files if not combined) */}
+            {(isCombinedImages ? otherFiles : files).map((f, idx) => {
+              const isSelected = !isPreviewingPhotoSheet && f.id === activeFile.id;
               return (
                 <button
                   key={f.id}
@@ -295,7 +341,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   }`}
                 >
                   <span className="truncate max-w-[130px]">
-                    {idx + 1}. {f.fileName}
+                    {isCombinedImages ? f.fileName : `${idx + 1}. ${f.fileName}`}
                   </span>
                   <span
                     className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
@@ -319,19 +365,20 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
           <div className="flex items-center gap-2 overflow-hidden">
             <span className="text-xs font-bold text-slate-900 truncate max-w-[170px]">
-              {isCombinedImages ? `Photo Sheet (${imageFiles.length} Photos)` : fileName}
+              {isPreviewingPhotoSheet ? `Photo Sheet (${imageFiles.length} Photos)` : fileName}
             </span>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                activeFile.color
+                isCurrentItemColor
                   ? 'bg-purple-50 text-purple-700'
                   : 'bg-slate-100 text-slate-600'
               }`}
             >
-              {activeFile.color ? 'Color' : 'Grayscale'}
+              {isCurrentItemColor ? 'Color' : 'Grayscale'}
             </span>
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-              {activeFile.copies} {activeFile.copies === 1 ? 'copy' : 'copies'}
+              {isPreviewingPhotoSheet ? imageFiles[0]?.copies || 1 : activeFile.copies}{' '}
+              {(isPreviewingPhotoSheet ? imageFiles[0]?.copies || 1 : activeFile.copies) === 1 ? 'copy' : 'copies'}
             </span>
           </div>
         </div>
@@ -367,7 +414,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             </div>
           ) : (
             <span className="text-slate-500 font-medium text-[11px]">
-              {isCombinedImages ? '1 Page Photo Sheet' : 'Single Page Document'}
+              {isPreviewingPhotoSheet ? '1 A4 Sheet' : 'Single Page Document'}
             </span>
           )}
 
@@ -498,8 +545,14 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   /* Multi-Image Grid (2, 4, 6, 9 in 1) arranged on portrait A4 sheet */
                   <div className={`grid ${getGridClass(currentGrid)} gap-1.5 w-full h-full`}>
                     {Array.from({ length: currentGrid }).map((_, idx) => {
-                      const currentImg = isCombinedImages
-                        ? imageFiles[idx]
+                      const itemIndex = isPreviewingPhotoSheet
+                        ? (selectedPage - 1) * currentGrid + idx
+                        : isCombinedImages
+                        ? (selectedPage - 1) * currentGrid + idx
+                        : idx;
+
+                      const currentImg = (isPreviewingPhotoSheet || isCombinedImages)
+                        ? imageFiles[itemIndex]
                         : idx === 0
                         ? activeFile
                         : null;
@@ -512,8 +565,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                             className="border border-slate-200 bg-white p-1 flex flex-col items-center justify-between overflow-hidden shadow-2xs h-full w-full relative"
                           >
                             <div className="w-full flex items-center justify-between text-[7.5px] font-bold text-slate-500 leading-none px-0.5 pt-0.5">
-                              <span className="truncate max-w-[80%]">{idx + 1}. {currentImg.fileName}</span>
-                              <span className="text-slate-400 font-mono">#{idx + 1}</span>
+                              <span className="truncate max-w-[80%]">{itemIndex + 1}. {currentImg.fileName}</span>
+                              <span className="text-slate-400 font-mono">#{itemIndex + 1}</span>
                             </div>
                             <div className="flex-1 min-h-0 w-full flex items-center justify-center p-0.5 overflow-hidden">
                               {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -4,6 +4,7 @@ import { config } from '../config/env';
 import { query } from '../db';
 import { queueEngine } from '../redis/queueEngine';
 import { removeFile } from '../services/storageService';
+import { assignPrintersToJob } from '../services/printerRoutingService';
 
 let io: Server | null = null;
 
@@ -236,33 +237,30 @@ export async function checkAndDispatchNextJob(shopId: string): Promise<boolean> 
     if (jobRes.rowCount === 0) return false;
     const job = jobRes.rows[0];
 
-    // Find suitable printer (match color vs mono)
     const settings = typeof job.settings === 'string' ? JSON.parse(job.settings) : job.settings;
-    const preferredType = settings.color ? 'color' : 'mono';
 
-    const printerRes = await query(
-      `SELECT * FROM printers 
-       WHERE shop_id = $1 AND type = $2 AND status = 'online' 
-       ORDER BY created_at ASC LIMIT 1`,
-      [shopId, preferredType]
+    // Execute sturdy printer routing and load balancing
+    const routingDecision = await assignPrintersToJob(
+      shopId,
+      settings,
+      job.page_count,
+      job.file_url,
+      job.file_name
     );
 
-    // Fallback to any online printer if preferred type is not available
-    let printer = printerRes.rows[0];
-    if (!printer) {
-      const anyPrinter = await query(
-        `SELECT * FROM printers WHERE shop_id = $1 AND status = 'online' LIMIT 1`,
-        [shopId]
-      );
-      printer = anyPrinter.rows[0];
-    }
-
-    const assignedPrinterId = printer ? printer.id : null;
-    const assignedSystemName = printer ? printer.system_name : null;
+    const assignedPrinterId = routingDecision.primaryPrinterId;
+    const assignedSystemName = routingDecision.primarySystemPrinterName;
 
     if (assignedPrinterId) {
       await query(`UPDATE print_jobs SET printer_id = $1 WHERE id = $2`, [assignedPrinterId, job.id]);
     }
+
+    const dispatchedSettings = {
+      ...settings,
+      files: routingDecision.assignedFiles,
+      isMultiPrinterSplit: routingDecision.isMultiPrinterSplit,
+      routingSummary: routingDecision.routingSummary,
+    };
 
     // Dispatch to Agent room
     io?.to(`agent:${shopId}`).emit('print_job_dispatch', {
@@ -272,12 +270,15 @@ export async function checkAndDispatchNextJob(shopId: string): Promise<boolean> 
       fileUrl: job.file_url,
       fileName: job.file_name,
       pageCount: job.page_count,
-      settings,
+      settings: dispatchedSettings,
       printerId: assignedPrinterId,
       systemPrinterName: assignedSystemName,
+      isMultiPrinterSplit: routingDecision.isMultiPrinterSplit,
+      routingSummary: routingDecision.routingSummary,
     });
 
     console.log(`[Queue Engine] Dispatched job ${job.token_code} (${job.id}) to Printer Agent`);
+    console.log(`   Routing: ${routingDecision.routingSummary}`);
     return true;
   } catch (err) {
     console.error('[Queue Engine] Error dispatching next job:', err);

@@ -83,8 +83,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const copies = imageFiles[0]?.copies || 1;
     const isColor = imageFiles.some((f) => f.color);
     const rate = isColor ? pricePerColor : pricePerBw;
-    const rawSheets = 1;
-    const sheetsPerCopy = 1;
+    const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+    const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+    const duplex = imageFiles[0]?.duplex ?? false;
+    const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
     printTotal += sheetsPerCopy * copies * rate;
     totalCopies += copies;
     totalPhysicalSheets += sheetsPerCopy * copies;
@@ -275,32 +277,93 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
         {/* Per-File Line Items */}
         <div className="space-y-2 border-b border-slate-100 pb-2.5">
-          {files.map((f, idx) => {
-            const pagesPerSheet = f.pagesPerSheet || 1;
-            const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
-            const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
-            const rate = f.color ? pricePerColor : pricePerBw;
-            const fileCost = sheetsPerCopy * (f.copies || 1) * rate;
+          {hasCombinedImages ? (
+            <>
+              {/* Combined Photo Sheet Item */}
+              {(() => {
+                const copies = imageFiles[0]?.copies || 1;
+                const isColor = imageFiles.some((f) => f.color);
+                const rate = isColor ? pricePerColor : pricePerBw;
+                const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+                const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+                const duplex = imageFiles[0]?.duplex ?? false;
+                const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+                const photoCost = sheetsPerCopy * copies * rate;
 
-            return (
-              <div key={f.id} className="flex items-center justify-between text-xs gap-2">
-                <div className="truncate max-w-[210px] sm:max-w-[250px]">
-                  <span className="font-bold text-slate-800 block truncate">
-                    {idx + 1}. {f.fileName}
-                  </span>
-                  <span className="text-[10px] text-slate-500">
-                    {f.copies} {f.copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
-                    {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} ({f.color ? 'Color' : 'B&W'}
-                    {pagesPerSheet > 1 ? `, ${pagesPerSheet}-in-1` : ''}
-                    {f.duplex ? ', Duplex' : ''})
+                return (
+                  <div className="flex items-center justify-between text-xs gap-2 bg-purple-50/50 p-2 rounded-lg border border-purple-100">
+                    <div className="truncate max-w-[210px] sm:max-w-[250px]">
+                      <span className="font-bold text-purple-950 block truncate">
+                        📷 Photo Sheet ({imageFiles.length} Photos)
+                      </span>
+                      <span className="text-[10px] text-purple-700 font-medium">
+                        {copies} {copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
+                        {sheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'} ({isColor ? 'Color' : 'B&W'}, {currentGrid}-in-1 Grid{duplex ? ', Duplex' : ''})
+                      </span>
+                    </div>
+                    <span className="font-bold text-purple-950 shrink-0">
+                      ₹{photoCost.toFixed(2)}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Standalone Documents (PDF, Word, etc.) */}
+              {otherFiles.map((f, idx) => {
+                const pagesPerSheet = f.pagesPerSheet || 1;
+                const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+                const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+                const rate = f.color ? pricePerColor : pricePerBw;
+                const fileCost = sheetsPerCopy * (f.copies || 1) * rate;
+
+                return (
+                  <div key={f.id} className="flex items-center justify-between text-xs gap-2">
+                    <div className="truncate max-w-[210px] sm:max-w-[250px]">
+                      <span className="font-bold text-slate-800 block truncate">
+                        {idx + 1}. {f.fileName}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {f.copies} {f.copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
+                        {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} ({f.color ? 'Color' : 'B&W'}
+                        {pagesPerSheet > 1 ? `, ${pagesPerSheet}-in-1` : ''}
+                        {f.duplex ? ', Duplex' : ''})
+                      </span>
+                    </div>
+                    <span className="font-bold text-slate-900 shrink-0">
+                      ₹{fileCost.toFixed(2)}
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          ) : (
+            files.map((f, idx) => {
+              const pagesPerSheet = f.pagesPerSheet || 1;
+              const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+              const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+              const rate = f.color ? pricePerColor : pricePerBw;
+              const fileCost = sheetsPerCopy * (f.copies || 1) * rate;
+
+              return (
+                <div key={f.id} className="flex items-center justify-between text-xs gap-2">
+                  <div className="truncate max-w-[210px] sm:max-w-[250px]">
+                    <span className="font-bold text-slate-800 block truncate">
+                      {idx + 1}. {f.fileName}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {f.copies} {f.copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
+                      {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} ({f.color ? 'Color' : 'B&W'}
+                      {pagesPerSheet > 1 ? `, ${pagesPerSheet}-in-1` : ''}
+                      {f.duplex ? ', Duplex' : ''})
+                    </span>
+                  </div>
+                  <span className="font-bold text-slate-900 shrink-0">
+                    ₹{fileCost.toFixed(2)}
                   </span>
                 </div>
-                <span className="font-bold text-slate-900 shrink-0">
-                  ₹{fileCost.toFixed(2)}
-                </span>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
 
         {/* Add-ons line items */}

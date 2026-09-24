@@ -147,7 +147,10 @@ async function handleDispatchedJob(job: {
 
     for (let i = 0; i < filesToPrint.length; i++) {
       const f = filesToPrint[i];
-      console.log(`   [Document ${i + 1}/${filesToPrint.length}] ${f.fileName} -> ${f.copies || 1} copies (${f.color ? 'Color' : 'Mono'})`);
+      const targetSystemPrinter = f.targetSystemPrinterName || f.systemPrinterName || job.systemPrinterName;
+      const driverColor = typeof f.driverColorMode === 'boolean' ? f.driverColorMode : !!f.color;
+
+      console.log(`   [Document ${i + 1}/${filesToPrint.length}] ${f.fileName} -> ${f.copies || 1} copies (${driverColor ? 'Color' : 'Mono'}) -> Spooling to [${targetSystemPrinter || 'Default Spooler'}]`);
 
       const ext = path.extname(f.fileName) || '.pdf';
       const tmpObj = tmp.fileSync({ postfix: ext, keep: false });
@@ -172,15 +175,15 @@ async function handleDispatchedJob(job: {
       });
 
       const printResult = await printToWindows(currentTempPath, {
-        printerName: job.systemPrinterName,
+        printerName: targetSystemPrinter,
         copies: f.copies || 1,
-        color: !!f.color,
+        color: driverColor,
         duplex: !!f.duplex,
         paperSize: f.paperSize || job.settings?.paperSize || 'A4',
         simulate: SIMULATE_PRINTING,
       });
 
-      console.log(`   ✅ Document ${i + 1} spooled successfully: ${printResult.message}`);
+      console.log(`   ✅ Document ${i + 1} spooled successfully to [${targetSystemPrinter || 'Default'}]: ${printResult.message}`);
       try {
         fs.unlinkSync(currentTempPath);
       } catch {}
