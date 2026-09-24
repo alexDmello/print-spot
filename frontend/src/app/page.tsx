@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { FileUpload } from '@/components/FileUpload';
 import { PrintSettings } from '@/components/PrintSettings';
@@ -228,12 +228,63 @@ export default function CustomerApp() {
     setJobId(null);
   };
 
-  // Back Arrow handler
+  // Back handler for navigation
   const handleBack = () => {
     if (step === 2) setStep(1);
     else if (step === 3) setStep(2);
     else if (step === 4) setStep(3);
+    else if (step === 6) setStep(1);
   };
+
+  // Mobile swipe-to-go-back gesture support
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      touchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        time: Date.now(),
+      };
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!touchStartRef.current) return;
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartRef.current.x;
+      const deltaY = touch.clientY - touchStartRef.current.y;
+      const deltaTime = Date.now() - touchStartRef.current.time;
+      const startX = touchStartRef.current.x;
+      touchStartRef.current = null;
+
+      // Do not trigger back if interacting with form inputs, selects, or horizontal scroll containers
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, .overflow-x-auto, [data-prevent-swipe]')) {
+        return;
+      }
+
+      // Detect edge swipe right (iOS/Android native pattern: start near edge, swipe right)
+      // or general horizontal swipe right with minimal vertical movement
+      const isEdgeSwipe = startX < 120 && deltaX > 45 && Math.abs(deltaY) < 65;
+      const isGeneralSwipe = deltaX > 75 && Math.abs(deltaY) < 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
+
+      if ((isEdgeSwipe || isGeneralSwipe) && deltaTime < 700) {
+        if ((step > 1 && step < 5) || step === 6) {
+          handleBack();
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [step]);
 
   if (isLoadingShop || !selectedShop) {
     return (

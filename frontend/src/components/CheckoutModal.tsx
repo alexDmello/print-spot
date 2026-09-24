@@ -294,11 +294,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="flex items-center justify-between text-xs gap-2 bg-purple-50/50 p-2 rounded-lg border border-purple-100">
                     <div className="truncate max-w-[210px] sm:max-w-[250px]">
                       <span className="font-bold text-purple-950 block truncate">
-                        📷 Photo Sheet ({imageFiles.length} Photos)
+                        📷 Photo Sheet • {imageFiles.length} Photos
                       </span>
                       <span className="text-[10px] text-purple-700 font-medium">
                         {copies} {copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
-                        {sheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'} ({isColor ? 'Color' : 'B&W'}, {currentGrid}-in-1 Grid, {(imageFiles[0]?.orientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait'}{duplex ? ', Duplex' : ''})
+                        {sheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'} • {isColor ? 'Color' : 'B&W'} • {currentGrid}-in-1 Grid • {(imageFiles[0]?.orientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait'}{duplex ? ' • Duplex' : ''}
                       </span>
                     </div>
                     <span className="font-bold text-purple-950 shrink-0">
@@ -324,10 +324,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       </span>
                       <span className="text-[10px] text-slate-500">
                         {f.copies} {f.copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
-                        {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} ({f.color ? 'Color' : 'B&W'}
-                        {pagesPerSheet > 1 ? `, ${pagesPerSheet}-in-1` : ''}
-                        {f.orientation ? `, ${f.orientation === 'landscape' ? 'Landscape' : 'Portrait'}` : ''}
-                        {f.duplex ? ', Duplex' : ''})
+                        {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} • {f.color ? 'Color' : 'B&W'}
+                        {pagesPerSheet > 1 ? ` • ${pagesPerSheet}-in-1` : ''}
+                        {f.orientation ? ` • ${f.orientation === 'landscape' ? 'Landscape' : 'Portrait'}` : ''}
+                        {f.duplex ? ' • Duplex' : ''}
                       </span>
                     </div>
                     <span className="font-bold text-slate-900 shrink-0">
@@ -353,10 +353,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                     <span className="text-[10px] text-slate-500">
                       {f.copies} {f.copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
-                      {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} ({f.color ? 'Color' : 'B&W'}
-                      {pagesPerSheet > 1 ? `, ${pagesPerSheet}-in-1` : ''}
-                      {f.orientation ? `, ${f.orientation === 'landscape' ? 'Landscape' : 'Portrait'}` : ''}
-                      {f.duplex ? ', Duplex' : ''})
+                      {sheetsPerCopy === 1 ? 'sheet' : 'sheets'} • {f.color ? 'Color' : 'B&W'}
+                      {pagesPerSheet > 1 ? ` • ${pagesPerSheet}-in-1` : ''}
+                      {f.orientation ? ` • ${f.orientation === 'landscape' ? 'Landscape' : 'Portrait'}` : ''}
+                      {f.duplex ? ' • Duplex' : ''}
                     </span>
                   </div>
                   <span className="font-bold text-slate-900 shrink-0">
