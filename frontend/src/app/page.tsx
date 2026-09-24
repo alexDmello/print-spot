@@ -103,19 +103,53 @@ export default function CustomerApp() {
       ? Number(colorService.price)
       : Number(selectedShop.price_per_color) || 10;
 
+    const isImageFile = (f: UploadedDocument) => {
+      const ext = (f.fileName.split('.').pop() || '').toLowerCase();
+      return (
+        ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
+        (f.mimeType?.startsWith('image/') ?? false)
+      );
+    };
+
+    const imageFiles = files.filter(isImageFile);
+    const otherFiles = files.filter((f) => !isImageFile(f));
+    const hasCombinedImages = imageFiles.length > 1 && !!files[0]?.combineImages;
+
     let printTotal = 0;
     let totalCopies = 0;
     let totalPhysicalSheets = 0;
 
-    files.forEach((f) => {
-      const pagesPerSheet = f.pagesPerSheet || 1;
-      const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
-      const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
-      const rate = f.color ? pricePerColor : pricePerBw;
-      printTotal += sheetsPerCopy * (f.copies || 1) * rate;
-      totalCopies += f.copies || 1;
-      totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
-    });
+    if (hasCombinedImages) {
+      const grid = imageFiles[0]?.pagesPerSheet || 6;
+      const copies = imageFiles[0]?.copies || 1;
+      const isColor = imageFiles.some((f) => f.color);
+      const rate = isColor ? pricePerColor : pricePerBw;
+      const rawSheets = Math.ceil(imageFiles.length / grid);
+      const sheetsPerCopy = imageFiles[0]?.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+      printTotal += sheetsPerCopy * copies * rate;
+      totalCopies += copies;
+      totalPhysicalSheets += sheetsPerCopy * copies;
+
+      otherFiles.forEach((f) => {
+        const pagesPerSheet = f.pagesPerSheet || 1;
+        const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+        const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+        const rate = f.color ? pricePerColor : pricePerBw;
+        printTotal += sheetsPerCopy * (f.copies || 1) * rate;
+        totalCopies += f.copies || 1;
+        totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+      });
+    } else {
+      files.forEach((f) => {
+        const pagesPerSheet = f.pagesPerSheet || 1;
+        const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+        const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+        const rate = f.color ? pricePerColor : pricePerBw;
+        printTotal += sheetsPerCopy * (f.copies || 1) * rate;
+        totalCopies += f.copies || 1;
+        totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+      });
+    }
 
     const customServices = services.filter((s) => !s.is_default && s.enabled);
     let addOnsCost = 0;

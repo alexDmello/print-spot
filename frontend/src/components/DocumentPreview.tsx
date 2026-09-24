@@ -18,7 +18,7 @@ interface DocumentPreviewProps {
   files: UploadedDocument[];
   totalPrice: number;
   onProceed: () => void;
-  onGridChange?: (fileId: string, grid: 1 | 2 | 4 | 6) => void;
+  onGridChange?: (fileId: string, grid: 1 | 2 | 4 | 6 | 9) => void;
 }
 
 export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
@@ -446,13 +446,63 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
           {/* 2. IMAGE RENDERING */}
           {isImage && (
-            <div className="w-full min-h-[260px] max-h-[440px] bg-white rounded-none border border-slate-300 flex items-center justify-center p-2 overflow-hidden shadow-inner">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={resolvedUrl}
-                alt={fileName}
-                className="max-h-[420px] max-w-full object-contain rounded-none"
-              />
+            <div>
+              {currentGrid === 1 && !activeFile?.combineImages ? (
+                <div className="w-full min-h-[260px] max-h-[440px] bg-white rounded-none border border-slate-300 flex items-center justify-center p-2 overflow-hidden shadow-inner">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={resolvedUrl}
+                    alt={fileName}
+                    className="max-h-[420px] max-w-full object-contain rounded-none"
+                  />
+                </div>
+              ) : (
+                /* Multi-Image Grid (2, 4, 6, 9 in 1) */
+                <div
+                  className={`grid gap-1.5 sm:gap-2 bg-white p-2 border border-slate-300 w-full ${
+                    currentGrid === 2
+                      ? 'grid-cols-2'
+                      : currentGrid === 4
+                      ? 'grid-cols-2'
+                      : 'grid-cols-3'
+                  }`}
+                >
+                  {Array.from({ length: currentGrid }).map((_, idx) => {
+                    const allImages = files.filter(
+                      (f) =>
+                        ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(
+                          (f.fileName.split('.').pop() || '').toLowerCase()
+                        ) || (f.mimeType?.startsWith('image/') ?? false)
+                    );
+
+                    const slotFile =
+                      activeFile?.combineImages && allImages.length > 1
+                        ? allImages[idx % allImages.length]
+                        : activeFile;
+                    const slotUrl = getResolvedUrl(slotFile?.fileUrl || fileUrl);
+
+                    return (
+                      <div
+                        key={idx}
+                        className="border border-dashed border-slate-300 p-1 flex flex-col items-center justify-between bg-slate-50 min-h-[105px] max-h-[140px] overflow-hidden"
+                      >
+                        <span className="text-[9px] font-bold text-slate-400 self-start truncate max-w-full">
+                          {activeFile?.combineImages && allImages.length > 1 && allImages[idx]
+                            ? `${idx + 1}. ${allImages[idx].fileName}`
+                            : `Slot ${idx + 1}`}
+                        </span>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={slotUrl}
+                          alt={`Slot ${idx + 1}`}
+                          className="max-h-[90px] max-w-full object-contain shadow-2xs border border-slate-200 bg-white"
+                        />
+                        <span className="text-[8px] text-slate-400">Photo Slot</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

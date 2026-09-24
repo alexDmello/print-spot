@@ -90,6 +90,35 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     );
   };
 
+  const isImageFile = (f: UploadedDocument) => {
+    const ext = (f.fileName.split('.').pop() || '').toLowerCase();
+    return (
+      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
+      (f.mimeType?.startsWith('image/') ?? false)
+    );
+  };
+
+  const imageFiles = files.filter(isImageFile);
+  const otherFiles = files.filter((f) => !isImageFile(f));
+  const isCombinedImages = imageFiles.length > 1 && !!files[0]?.combineImages;
+
+  const toggleCombineImages = () => {
+    const nextCombined = !isCombinedImages;
+    const defaultGrid: 1 | 2 | 4 | 6 | 9 =
+      imageFiles.length <= 2 ? 2 : imageFiles.length <= 4 ? 4 : imageFiles.length <= 6 ? 6 : 9;
+    onFilesChange(
+      files.map((f) =>
+        isImageFile(f)
+          ? {
+              ...f,
+              combineImages: nextCombined,
+              pagesPerSheet: nextCombined ? defaultGrid : 1,
+            }
+          : f
+      )
+    );
+  };
+
   // Helper to calculate sheets and cost for a single file
   const calculateFileCost = (file: UploadedDocument) => {
     const pagesPerSheet = file.pagesPerSheet || 1;
@@ -105,12 +134,33 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
   let totalCopies = 0;
   let totalPhysicalSheets = 0;
 
-  files.forEach((f) => {
-    const { sheetsPerCopy, total } = calculateFileCost(f);
+  if (isCombinedImages) {
+    const grid = imageFiles[0]?.pagesPerSheet || 6;
+    const copies = imageFiles[0]?.copies || 1;
+    const isColor = imageFiles.some((f) => f.color);
+    const rate = isColor ? pricePerColor : pricePerBw;
+    const rawSheets = Math.ceil(imageFiles.length / grid);
+    const sheetsPerCopy = imageFiles[0]?.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+    const total = sheetsPerCopy * copies * rate;
+
     totalPrintCost += total;
-    totalCopies += f.copies || 1;
-    totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
-  });
+    totalCopies += copies;
+    totalPhysicalSheets += sheetsPerCopy * copies;
+
+    otherFiles.forEach((f) => {
+      const { sheetsPerCopy, total } = calculateFileCost(f);
+      totalPrintCost += total;
+      totalCopies += f.copies || 1;
+      totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+    });
+  } else {
+    files.forEach((f) => {
+      const { sheetsPerCopy, total } = calculateFileCost(f);
+      totalPrintCost += total;
+      totalCopies += f.copies || 1;
+      totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+    });
+  }
 
   const grandTotal = totalPrintCost;
 
@@ -159,6 +209,34 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
             className="text-[11px] font-bold text-[#0e7490] hover:text-[#0891b2] underline cursor-pointer"
           >
             Apply File 1 settings to all
+          </button>
+        </div>
+      )}
+
+      {/* Multi-Image Combine Option (e.g. 6 or 9 images on 1 sheet) */}
+      {imageFiles.length > 1 && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
+              <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>Multi-Image Photo Sheet</span>
+            </div>
+            <p className="text-[11px] text-purple-700">
+              {isCombinedImages
+                ? `Fitting ${imageFiles.length} images onto shared sheet(s) (${imageFiles[0]?.pagesPerSheet || 6} in 1)`
+                : `Combine ${imageFiles.length} images into a single sheet (e.g. 6 or 9 images in 1)`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleCombineImages}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              isCombinedImages
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50'
+            }`}
+          >
+            {isCombinedImages ? 'Combined ✓' : 'Fit on 1 Sheet'}
           </button>
         </div>
       )}
@@ -347,26 +425,35 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     <div className="flex items-center justify-between text-xs">
                       <label className="font-bold text-slate-800 flex items-center gap-1">
                         <Layers className="w-3.5 h-3.5 text-[#0e7490]" />
-                        <span>Pages Per Sheet</span>
+                        <span>{isImageFile(item) ? 'Images Per Sheet' : 'Pages Per Sheet'}</span>
                       </label>
                       <span className="text-[10px] text-slate-500">
                         {item.pagesPerSheet === 1 ? 'Full Page' : `${item.pagesPerSheet}-in-1 Grid`}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {([1, 2, 4, 6] as const).map((gridNum) => (
+                    <div className="grid grid-cols-5 gap-1">
+                      {([1, 2, 4, 6, 9] as const).map((gridNum) => (
                         <button
                           key={gridNum}
                           type="button"
-                          onClick={() => updateFileSetting(item.id, { pagesPerSheet: gridNum })}
-                          className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold transition-all ${
+                          onClick={() => {
+                            updateFileSetting(item.id, { pagesPerSheet: gridNum });
+                            if (isCombinedImages && isImageFile(item)) {
+                              onFilesChange(
+                                files.map((f) =>
+                                  isImageFile(f) ? { ...f, pagesPerSheet: gridNum } : f
+                                )
+                              );
+                            }
+                          }}
+                          className={`py-1.5 px-1 rounded-lg border text-center text-xs font-bold transition-all cursor-pointer ${
                             (item.pagesPerSheet || 1) === gridNum
                               ? 'border-[#0e7490] bg-[#ecfeff] text-[#0e7490] shadow-2xs'
                               : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                           }`}
                         >
-                          {gridNum === 1 ? '1 (Full)' : `${gridNum} in 1`}
+                          {gridNum === 1 ? '1-up' : `${gridNum}-in-1`}
                         </button>
                       ))}
                     </div>

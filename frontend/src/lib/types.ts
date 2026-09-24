@@ -64,8 +64,9 @@ export interface UploadedDocument {
   copies: number;
   color: boolean;
   duplex: boolean;
-  pagesPerSheet: 1 | 2 | 4 | 6;
+  pagesPerSheet: 1 | 2 | 4 | 6 | 9;
   paperSize?: 'A4' | 'A3' | 'Letter';
+  combineImages?: boolean;
 }
 
 export interface User {
