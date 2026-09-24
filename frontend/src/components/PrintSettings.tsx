@@ -49,8 +49,9 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
   const pricePerBw = bwService ? Number(bwService.price) : Number(shop.price_per_bw) || 2;
   const pricePerColor = colorService ? Number(colorService.price) : Number(shop.price_per_color) || 10;
 
-  // Track expanded cards on mobile (default: all expanded or first expanded)
-  const [expandedFileId, setExpandedFileId] = useState<string | null>(files[0]?.id || null);
+  // Open/Close states for all document cards & photo sheet
+  const [openCardIds, setOpenCardIds] = useState<Record<string, boolean>>({});
+  const [isPhotoSheetOpen, setIsPhotoSheetOpen] = useState<boolean>(true);
 
   // Auto-switch file color mode if disabled by shopkeeper
   useEffect(() => {
@@ -186,6 +187,41 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     );
   };
 
+  const displayFiles = isCombinedImages ? otherFiles : files;
+  const totalCards = displayFiles.length + (isCombinedImages ? 1 : 0);
+
+  const isCardOpen = (cardId: string, index: number): boolean => {
+    if (openCardIds[cardId] !== undefined) {
+      return openCardIds[cardId];
+    }
+    // Default open: first card, or if only 1 card exists
+    return index === 0 || totalCards === 1;
+  };
+
+  const toggleCardOpen = (cardId: string, index: number) => {
+    const current = isCardOpen(cardId, index);
+    setOpenCardIds((prev) => ({
+      ...prev,
+      [cardId]: !current,
+    }));
+  };
+
+  const areAllExpanded =
+    (isCombinedImages ? isPhotoSheetOpen : true) &&
+    displayFiles.every((f, idx) => isCardOpen(f.id, idx));
+
+  const toggleAllCards = () => {
+    const targetState = !areAllExpanded;
+    const updated: Record<string, boolean> = {};
+    displayFiles.forEach((f) => {
+      updated[f.id] = targetState;
+    });
+    setOpenCardIds(updated);
+    if (isCombinedImages) {
+      setIsPhotoSheetOpen(targetState);
+    }
+  };
+
   const getFileIcon = (fileName: string, mime?: string) => {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     if (ext === 'pdf' || mime === 'application/pdf') {
@@ -257,13 +293,34 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         </div>
       )}
 
+      {/* Cards Header Bar (when more than 1 card exists) */}
+      {totalCards > 1 && (
+        <div className="flex items-center justify-between px-1 text-xs">
+          <span className="font-bold text-slate-600">
+            Document Settings ({totalCards} {totalCards === 1 ? 'card' : 'cards'})
+          </span>
+          <button
+            type="button"
+            onClick={toggleAllCards}
+            className="text-[11px] font-bold text-[#0e7490] hover:text-[#0891b2] cursor-pointer"
+          >
+            {areAllExpanded ? 'Collapse All' : 'Expand All'}
+          </button>
+        </div>
+      )}
+
       {/* Per-File / Photo Sheet Settings Cards */}
       <div className="space-y-3">
         {/* UNIFIED SINGLE CONTROL CARD FOR PHOTO SHEET (when Fit into 1 Page is active) */}
         {isCombinedImages && (
           <div className="figma-card overflow-hidden bg-white border border-purple-300 shadow-sm ring-1 ring-purple-400/20">
-            {/* Header */}
-            <div className="p-3.5 flex items-center justify-between bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border-b border-purple-100">
+            {/* Header: Clickable dropdown toggle in ALL scenarios */}
+            <div
+              onClick={() => setIsPhotoSheetOpen(!isPhotoSheetOpen)}
+              className={`p-3.5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border-b ${
+                isPhotoSheetOpen ? 'border-purple-100' : 'border-transparent'
+              } hover:bg-purple-100/50 transition-colors select-none`}
+            >
               <div className="flex items-center gap-2.5 overflow-hidden">
                 <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
                   <ImageIcon className="w-4 h-4" />
@@ -290,18 +347,24 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                 </div>
               </div>
 
-              <div className="text-right shrink-0">
-                <span className="text-xs font-bold text-purple-950 block">
-                  ₹{photoSheetTotal.toFixed(2)}
-                </span>
-                <span className="text-[10px] text-purple-700 font-medium">
-                  {photoSheetCopies} {photoSheetCopies === 1 ? 'copy' : 'copies'} • {photoSheetSheetsPerCopy} {photoSheetSheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'}
-                </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="text-right">
+                  <span className="text-xs font-bold text-purple-950 block">
+                    ₹{photoSheetTotal.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] text-purple-700 font-medium">
+                    {photoSheetCopies} {photoSheetCopies === 1 ? 'copy' : 'copies'} • {photoSheetSheetsPerCopy} {photoSheetSheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'}
+                  </span>
+                </div>
+                <div className="text-purple-600 ml-1">
+                  {isPhotoSheetOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
               </div>
             </div>
 
             {/* Unified Control Body */}
-            <div className="p-3.5 space-y-4 bg-white">
+            {isPhotoSheetOpen && (
+              <div className="p-3.5 space-y-4 bg-white">
               {/* Photo Thumbnail Strip */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
@@ -503,31 +566,29 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                 </div>
               </div>
             </div>
+            )}
           </div>
         )}
 
         {/* Individual Cards: Either for otherFiles (when combined) or for all files (when not combined) */}
-        {(isCombinedImages ? otherFiles : files).map((item) => {
+        {displayFiles.map((item, index) => {
           const originalIndex = files.findIndex((f) => f.id === item.id);
           const { sheetsPerCopy, rate, total } = calculateFileCost(item);
-          const isExpanded = (isCombinedImages ? otherFiles.length === 1 : files.length === 1) || expandedFileId === item.id;
+          const isExpanded = isCardOpen(item.id, index);
 
           return (
             <div
               key={item.id}
               className={`figma-card overflow-hidden transition-all bg-white border ${
-                isExpanded ? 'border-[#0e7490] ring-1 ring-[#0e7490]/20' : 'border-slate-200'
+                isExpanded ? 'border-[#0e7490] ring-1 ring-[#0e7490]/20' : 'border-slate-200 hover:border-slate-300'
               }`}
             >
-              {/* Card Header (Accordion toggle when multiple files) */}
+              {/* Card Header (Clickable dropdown toggle in ALL scenarios) */}
               <div
-                onClick={() =>
-                  files.length > 1 &&
-                  setExpandedFileId(expandedFileId === item.id ? null : item.id)
-                }
+                onClick={() => toggleCardOpen(item.id, index)}
                 className={`p-3.5 flex items-center justify-between cursor-pointer bg-slate-50/70 border-b ${
                   isExpanded ? 'border-slate-200' : 'border-transparent'
-                }`}
+                } hover:bg-slate-100/70 transition-colors select-none`}
               >
                 <div className="flex items-center gap-2.5 overflow-hidden">
                   <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0">
@@ -561,11 +622,9 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                       {item.copies} {item.copies === 1 ? 'copy' : 'copies'} • {item.pageCount} pgs
                     </span>
                   </div>
-                  {files.length > 1 && (
-                    <div className="text-slate-400">
-                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                    </div>
-                  )}
+                  <div className="text-slate-400 ml-1">
+                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </div>
                 </div>
               </div>
 

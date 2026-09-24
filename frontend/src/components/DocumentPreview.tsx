@@ -84,24 +84,9 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const isWordDoc = !isPreviewingPhotoSheet && ['doc', 'docx'].includes(ext);
   const isCodeOrText = !isPreviewingPhotoSheet && ['txt', 'md', 'json', 'js', 'py', 'ts', 'log', 'html'].includes(ext);
 
-  // For images and combined photo sheet, default orientation is 'landscape'
-  const defaultOrientation: 'portrait' | 'landscape' =
+  // Orientation is determined by configuration (defaults to landscape for photos/photo sheet, portrait for documents)
+  const orientation: 'portrait' | 'landscape' =
     activeFile?.orientation || (isImage || isPreviewingPhotoSheet ? 'landscape' : 'portrait');
-
-  const [localOrientation, setLocalOrientation] = useState<'portrait' | 'landscape'>(defaultOrientation);
-
-  useEffect(() => {
-    setLocalOrientation(
-      activeFile?.orientation || (isImage || isPreviewingPhotoSheet ? 'landscape' : 'portrait')
-    );
-  }, [activeFile?.id, activeFile?.orientation, isImage, isPreviewingPhotoSheet]);
-
-  const handleOrientationToggle = (orient: 'portrait' | 'landscape') => {
-    setLocalOrientation(orient);
-    if (onOrientationChange && activeFile) {
-      onOrientationChange(activeFile.id, orient);
-    }
-  };
 
   // Normalize URL to same-origin path to prevent CORS/iframe cross-origin issues
   const getResolvedUrl = (url?: string) => {
@@ -485,55 +470,27 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
         {/* PHYSICAL A4 PAPER SHEET CONTAINER (Adapts to Portrait 210x297 mm or Landscape 297x210 mm) */}
         <div className="bg-slate-200/60 p-2.5 sm:p-4 rounded-2xl flex flex-col items-center justify-center border border-slate-200/80 shadow-inner">
-          {/* Header indicator & Orientation Switcher above paper */}
-          <div className={`w-full ${localOrientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'} flex items-center justify-between pb-1.5 text-[10px] text-slate-500 font-semibold mb-1`}>
+          {/* Header indicator above paper */}
+          <div className={`w-full ${orientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'} flex items-center justify-between pb-1.5 text-[10px] text-slate-500 font-semibold mb-1`}>
             <div className="flex items-center gap-1.5 font-bold text-slate-700">
               <FileText className="w-3.5 h-3.5 text-[#0e7490]" />
               <span>
-                {localOrientation === 'landscape' ? 'A4 Landscape (297 × 210 mm)' : 'A4 Portrait (210 × 297 mm)'}
-              </span>
-              <span className="text-[9px] bg-white px-1.5 py-0.2 rounded border border-slate-300 font-bold text-slate-600 uppercase ml-1">
-                {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
+                {orientation === 'landscape' ? 'A4 Landscape (297 × 210 mm)' : 'A4 Portrait (210 × 297 mm)'}
               </span>
             </div>
-
-            {/* Quick Orientation Switcher */}
-            <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => handleOrientationToggle('portrait')}
-                className={`px-2 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer ${
-                  localOrientation === 'portrait'
-                    ? 'bg-[#0e7490] text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Switch to Portrait"
-              >
-                Portrait
-              </button>
-              <button
-                type="button"
-                onClick={() => handleOrientationToggle('landscape')}
-                className={`px-2 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer ${
-                  localOrientation === 'landscape'
-                    ? 'bg-[#0e7490] text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-                title="Switch to Landscape (Recommended for photos)"
-              >
-                Landscape
-              </button>
-            </div>
+            <span className="text-[9px] bg-white px-2 py-0.5 rounded border border-slate-300 font-bold text-slate-600 uppercase">
+              {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
+            </span>
           </div>
 
           {/* PHYSICAL A4 PAPER: STRICTLY NON-ROUNDED (SHARP 90° CUT), EXACT 210:297 OR 297:210 RATIO */}
           <div
             style={{
-              aspectRatio: localOrientation === 'landscape' ? '297 / 210' : '210 / 297',
+              aspectRatio: orientation === 'landscape' ? '297 / 210' : '210 / 297',
               ...colorFilterStyle,
             }}
             className={`w-full ${
-              localOrientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'
+              orientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'
             } bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 p-2 sm:p-2.5 transition-all relative flex flex-col justify-between select-none overflow-hidden`}
           >
             {/* 1. PDF DOCUMENT RENDERING */}
@@ -575,7 +532,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   )
                 ) : (
                   /* Multi-Page Grid (2, 4, 6, 9 in 1) using PDF.js inside A4 */
-                  <div className={`grid ${getGridClass(currentGrid, localOrientation)} gap-1.5 w-full h-full`}>
+                  <div className={`grid ${getGridClass(currentGrid, orientation)} gap-1.5 w-full h-full`}>
                     {Array.from({ length: currentGrid }).map((_, idx) => (
                       <div
                         key={idx}
@@ -614,7 +571,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   </div>
                 ) : (
                   /* Multi-Image Grid (2, 4, 6, 9 in 1) arranged on A4 sheet */
-                  <div className={`grid ${getGridClass(currentGrid, localOrientation)} gap-1.5 w-full h-full`}>
+                  <div className={`grid ${getGridClass(currentGrid, orientation)} gap-1.5 w-full h-full`}>
                     {Array.from({ length: currentGrid }).map((_, idx) => {
                       const itemIndex = isPreviewingPhotoSheet
                         ? (selectedPage - 1) * currentGrid + idx
