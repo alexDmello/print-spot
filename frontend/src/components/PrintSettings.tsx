@@ -23,24 +23,50 @@ interface DropdownOption {
   disabled?: boolean;
 }
 
-const DropdownSelect: React.FC<{
+const DropdownRow: React.FC<{
   label: string;
+  sublabel?: string;
   value: string | number;
   options: DropdownOption[];
   onChange: (val: string) => void;
   icon?: React.ReactNode;
-}> = ({ label, value, options, onChange, icon }) => {
+  iconBgClass?: string;
+}> = ({
+  label,
+  sublabel,
+  value,
+  options,
+  onChange,
+  icon,
+  iconBgClass = 'bg-slate-100 text-[#0e7490]',
+}) => {
   return (
-    <div className="space-y-1">
-      <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-        {icon}
-        <span>{label}</span>
-      </label>
-      <div className="relative">
+    <div className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-slate-50/70 border border-slate-200/80 hover:bg-slate-50 hover:border-slate-300 transition-all gap-3">
+      {/* Option Name on Left */}
+      <div className="flex items-center gap-2.5 min-w-0 pr-1">
+        {icon && (
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${iconBgClass}`}>
+            {icon}
+          </div>
+        )}
+        <div className="min-w-0">
+          <span className="text-xs font-bold text-slate-800 block truncate">
+            {label}
+          </span>
+          {sublabel && (
+            <span className="text-[10px] text-slate-500 font-medium block truncate">
+              {sublabel}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Dropdown Option on Right */}
+      <div className="relative shrink-0 w-auto min-w-[145px] max-w-[58%] sm:max-w-[62%]">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-900 pr-8 focus:outline-none focus:border-[#0e7490] focus:ring-2 focus:ring-[#0e7490]/15 hover:bg-slate-100/60 hover:border-slate-300 cursor-pointer shadow-2xs transition-all"
+          className="appearance-none w-full bg-white border border-slate-200 hover:border-slate-300 rounded-lg pl-3 pr-7 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#0e7490] focus:ring-2 focus:ring-[#0e7490]/15 cursor-pointer shadow-2xs transition-all truncate"
         >
           {options.map((opt) => (
             <option key={opt.value} value={opt.value} disabled={opt.disabled}>
@@ -48,10 +74,30 @@ const DropdownSelect: React.FC<{
             </option>
           ))}
         </select>
-        <ChevronDown className="w-4 h-4 text-slate-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+        <ChevronDown className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" />
       </div>
     </div>
   );
+};
+
+const getCopyOptions = (current: number): DropdownOption[] => {
+  const base = [
+    ...Array.from({ length: 20 }, (_, i) => i + 1),
+    25,
+    30,
+    40,
+    50,
+    75,
+    100,
+  ];
+  if (!base.includes(current) && current > 0) {
+    base.push(current);
+    base.sort((a, b) => a - b);
+  }
+  return base.map((n) => ({
+    value: n,
+    label: `${n} ${n === 1 ? 'copy' : 'copies'}`,
+  }));
 };
 
 interface PrintSettingsProps {
@@ -124,6 +170,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         color: sourceFile.color,
         duplex: sourceFile.duplex,
         pagesPerSheet: sourceFile.pagesPerSheet,
+        orientation: sourceFile.orientation,
       }))
     );
   };
@@ -437,10 +484,10 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                 </div>
               </div>
 
-              {/* Photo Sheet Settings Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Photo Sheet Settings List */}
+              <div className="space-y-2 pt-1">
                 {/* 1. Sheet Orientation Dropdown */}
-                <DropdownSelect
+                <DropdownRow
                   label="Orientation"
                   value={photoSheetOrientation}
                   onChange={(val) => updatePhotoSheetSetting({ orientation: val as 'portrait' | 'landscape' })}
@@ -448,11 +495,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     { value: 'landscape', label: 'Landscape' },
                     { value: 'portrait', label: 'Portrait' },
                   ]}
-                  icon={<FileText className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  icon={<FileText className="w-3.5 h-3.5 text-purple-700" />}
+                  iconBgClass="bg-purple-100 text-purple-700"
                 />
 
                 {/* 2. Grid Layout Dropdown */}
-                <DropdownSelect
+                <DropdownRow
                   label="Grid Layout"
                   value={photoSheetGrid}
                   onChange={(val) => updatePhotoSheetSetting({ pagesPerSheet: Number(val) as 2 | 4 | 6 | 9 })}
@@ -462,11 +510,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     { value: 6, label: '6 in 1' },
                     { value: 9, label: '9 in 1' },
                   ]}
-                  icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
+                  iconBgClass="bg-purple-100 text-purple-700"
                 />
 
                 {/* 3. Print Mode Dropdown */}
-                <DropdownSelect
+                <DropdownRow
                   label="Print Mode"
                   value={photoSheetColor ? 'color' : 'bw'}
                   onChange={(val) => updatePhotoSheetSetting({ color: val === 'color' })}
@@ -474,40 +523,46 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     { value: 'color', label: `Full Color • ₹${pricePerColor}/sheet`, disabled: !isColorEnabled },
                     { value: 'bw', label: `Black & White • ₹${pricePerBw}/sheet`, disabled: !isBwEnabled },
                   ]}
-                  icon={<Check className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  icon={<Check className="w-3.5 h-3.5 text-purple-700" />}
+                  iconBgClass="bg-purple-100 text-purple-700"
                 />
 
-                {/* 4. Copies Stepper */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                      <Copy className="w-3.5 h-3.5 text-[#0e7490]" />
-                      <span>Copies</span>
-                    </label>
-                    <span className="text-slate-500 text-[10px]">
-                      {photoSheetSheetsPerCopy * photoSheetCopies} {photoSheetSheetsPerCopy * photoSheetCopies === 1 ? 'sheet' : 'sheets'}
-                    </span>
-                  </div>
-                  <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1 w-full h-[38px]">
-                    <button
-                      type="button"
-                      onClick={() => updatePhotoSheetSetting({ copies: Math.max(1, photoSheetCopies - 1) })}
-                      className="w-8 h-full rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-sm"
-                    >
-                      -
-                    </button>
-                    <span className="flex-1 text-center font-bold text-slate-900 text-sm">
-                      {photoSheetCopies}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => updatePhotoSheetSetting({ copies: photoSheetCopies + 1 })}
-                      className="w-8 h-full rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-sm"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                {/* 4. Sides Dropdown (when multi-sheet photo layout) */}
+                {photoSheetRawSheets > 1 && (
+                  <DropdownRow
+                    label="Sides"
+                    value={photoSheetDuplex ? 'duplex' : 'simplex'}
+                    onChange={(val) => updatePhotoSheetSetting({ duplex: val === 'duplex' })}
+                    options={[
+                      { value: 'simplex', label: 'Single-Sided' },
+                      { value: 'duplex', label: 'Double-Sided' },
+                    ]}
+                    icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
+                    iconBgClass="bg-purple-100 text-purple-700"
+                  />
+                )}
+
+                {/* 5. Copies Dropdown */}
+                <DropdownRow
+                  label="Copies"
+                  sublabel={`${photoSheetSheetsPerCopy * photoSheetCopies} ${photoSheetSheetsPerCopy * photoSheetCopies === 1 ? 'sheet' : 'sheets'}`}
+                  value={photoSheetCopies}
+                  onChange={(val) => updatePhotoSheetSetting({ copies: Number(val) })}
+                  options={getCopyOptions(photoSheetCopies)}
+                  icon={<Copy className="w-3.5 h-3.5 text-purple-700" />}
+                  iconBgClass="bg-purple-100 text-purple-700"
+                />
+              </div>
+
+              {/* Photo Sheet Cost Calculation Footer */}
+              <div className="pt-2 border-t border-purple-100 flex items-center justify-between text-[11px] text-purple-700">
+                <span>
+                  {photoSheetCopies} {photoSheetCopies === 1 ? 'copy' : 'copies'} × {photoSheetSheetsPerCopy}{' '}
+                  {photoSheetSheetsPerCopy === 1 ? 'sheet' : 'sheets'} • ₹{photoSheetRate}/sheet
+                </span>
+                <strong className="text-purple-950 font-bold text-xs">
+                  ₹{photoSheetTotal.toFixed(2)}
+                </strong>
               </div>
             </div>
             )}
@@ -574,109 +629,76 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
               {/* Card Body: Per-File Print Controls */}
               {isExpanded && (
-                <div className="p-3.5 space-y-3.5 bg-white">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* 1. Print Mode Dropdown */}
-                    <DropdownSelect
-                      label="Print Mode"
-                      value={item.color ? 'color' : 'bw'}
-                      onChange={(val) => updateFileSetting(item.id, { color: val === 'color' })}
-                      options={[
-                        { value: 'bw', label: `Black & White • ₹${pricePerBw}/sheet`, disabled: !isBwEnabled },
-                        { value: 'color', label: `Full Color • ₹${pricePerColor}/sheet`, disabled: !isColorEnabled },
-                      ]}
-                      icon={<Check className="w-3.5 h-3.5 text-[#0e7490]" />}
-                    />
+                <div className="p-3.5 space-y-2 bg-white">
+                  {/* 1. Print Mode Dropdown */}
+                  <DropdownRow
+                    label="Print Mode"
+                    value={item.color ? 'color' : 'bw'}
+                    onChange={(val) => updateFileSetting(item.id, { color: val === 'color' })}
+                    options={[
+                      { value: 'bw', label: `Black & White • ₹${pricePerBw}/sheet`, disabled: !isBwEnabled },
+                      { value: 'color', label: `Full Color • ₹${pricePerColor}/sheet`, disabled: !isColorEnabled },
+                    ]}
+                    icon={<Check className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
 
-                    {/* 2. Sides Dropdown */}
-                    <DropdownSelect
-                      label="Sides"
-                      value={item.duplex ? 'duplex' : 'simplex'}
-                      onChange={(val) => updateFileSetting(item.id, { duplex: val === 'duplex' })}
-                      options={[
-                        { value: 'simplex', label: 'Single-Sided' },
-                        { value: 'duplex', label: 'Double-Sided' },
-                      ]}
-                      icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
-                    />
+                  {/* 2. Sides Dropdown */}
+                  <DropdownRow
+                    label="Sides"
+                    value={item.duplex ? 'duplex' : 'simplex'}
+                    onChange={(val) => updateFileSetting(item.id, { duplex: val === 'duplex' })}
+                    options={[
+                      { value: 'simplex', label: 'Single-Sided' },
+                      { value: 'duplex', label: 'Double-Sided' },
+                    ]}
+                    icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
 
-                    {/* 3. Orientation Dropdown */}
-                    <DropdownSelect
-                      label="Orientation"
-                      value={item.orientation || (isImageFile(item) ? 'landscape' : 'portrait')}
-                      onChange={(val) => updateFileSetting(item.id, { orientation: val as 'portrait' | 'landscape' })}
-                      options={[
-                        { value: 'portrait', label: 'Portrait' },
-                        { value: 'landscape', label: 'Landscape' },
-                      ]}
-                      icon={<FileText className="w-3.5 h-3.5 text-[#0e7490]" />}
-                    />
+                  {/* 3. Orientation Dropdown */}
+                  <DropdownRow
+                    label="Orientation"
+                    value={item.orientation || (isImageFile(item) ? 'landscape' : 'portrait')}
+                    onChange={(val) => updateFileSetting(item.id, { orientation: val as 'portrait' | 'landscape' })}
+                    options={[
+                      { value: 'portrait', label: 'Portrait' },
+                      { value: 'landscape', label: 'Landscape' },
+                    ]}
+                    icon={<FileText className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
 
-                    {/* 4. Layout Dropdown */}
-                    <DropdownSelect
-                      label="Layout"
-                      value={item.pagesPerSheet || 1}
-                      onChange={(val) => {
-                        const gridNum = Number(val) as 1 | 2 | 4 | 6 | 9;
-                        if (isCombinedImages && isImageFile(item)) {
-                          onFilesChange(
-                            files.map((f) => (isImageFile(f) ? { ...f, pagesPerSheet: gridNum } : f))
-                          );
-                        } else {
-                          updateFileSetting(item.id, { pagesPerSheet: gridNum });
-                        }
-                      }}
-                      options={[
-                        { value: 1, label: '1 Page per Sheet' },
-                        { value: 2, label: '2 in 1' },
-                        { value: 4, label: '4 in 1' },
-                        { value: 6, label: '6 in 1' },
-                        { value: 9, label: '9 in 1' },
-                      ]}
-                      icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
-                    />
-                  </div>
+                  {/* 4. Layout Grid Dropdown */}
+                  <DropdownRow
+                    label="Layout Grid"
+                    value={item.pagesPerSheet || 1}
+                    onChange={(val) => {
+                      const gridNum = Number(val) as 1 | 2 | 4 | 6 | 9;
+                      if (isCombinedImages && isImageFile(item)) {
+                        onFilesChange(
+                          files.map((f) => (isImageFile(f) ? { ...f, pagesPerSheet: gridNum } : f))
+                        );
+                      } else {
+                        updateFileSetting(item.id, { pagesPerSheet: gridNum });
+                      }
+                    }}
+                    options={[
+                      { value: 1, label: '1 Page per Sheet' },
+                      { value: 2, label: '2 in 1' },
+                      { value: 4, label: '4 in 1' },
+                      { value: 6, label: '6 in 1' },
+                      { value: 9, label: '9 in 1' },
+                    ]}
+                    icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
 
-                  {/* 5. Copies Selector */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                        <Copy className="w-3.5 h-3.5 text-[#0e7490]" />
-                        <span>Copies</span>
-                      </label>
-                      <span className="text-slate-500 text-[10px]">
-                        {sheetsPerCopy * (item.copies || 1)} {sheetsPerCopy * (item.copies || 1) === 1 ? 'sheet' : 'sheets'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1 w-full h-[38px]">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateFileSetting(item.id, {
-                            copies: Math.max(1, (item.copies || 1) - 1),
-                          })
-                        }
-                        className="w-8 h-full rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-sm"
-                      >
-                        -
-                      </button>
-                      <span className="flex-1 text-center font-bold text-slate-900 text-sm">
-                        {item.copies || 1}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateFileSetting(item.id, {
-                            copies: (item.copies || 1) + 1,
-                          })
-                        }
-                        className="w-8 h-full rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-sm"
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
+                  {/* 5. Copies Dropdown */}
+                  <DropdownRow
+                    label="Copies"
+                    sublabel={`${sheetsPerCopy * (item.copies || 1)} ${sheetsPerCopy * (item.copies || 1) === 1 ? 'sheet' : 'sheets'}`}
+                    value={item.copies || 1}
+                    onChange={(val) => updateFileSetting(item.id, { copies: Number(val) })}
+                    options={getCopyOptions(item.copies || 1)}
+                    icon={<Copy className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
 
                   {/* File Cost Calculation Footer */}
                   <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">

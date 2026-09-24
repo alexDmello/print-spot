@@ -137,7 +137,7 @@ export const ShopSelector: React.FC<ShopSelectorProps> = ({ shop, onProceed, onT
 
       {/* Sticky Bottom Bar */}
       <MobileBottomCta
-        label="Total (incl. tax)"
+        label="Total"
         value="₹0.00"
         buttonText="Start Printing"
         onButtonClick={onProceed}

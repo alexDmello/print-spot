@@ -336,7 +336,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>Photo Sheet ({imageFiles.length} Photos)</span>
+                <span>Photo Sheet • {imageFiles.length} Photos</span>
                 <span
                   className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
                     isPreviewingPhotoSheet ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
