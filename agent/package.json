@@ -1,0 +1,24 @@
+{
+  "name": "printspot-agent",
+  "version": "1.0.0",
+  "description": "Shop-Side Persistent Printer Agent for PrintSpot",
+  "main": "dist/agent.js",
+  "scripts": {
+    "dev": "ts-node src/agent.ts",
+    "build": "tsc",
+    "start": "node dist/agent.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "pdf-to-printer": "^5.6.0",
+    "socket.io-client": "^4.8.1",
+    "tmp": "^0.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/tmp": "^0.2.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}

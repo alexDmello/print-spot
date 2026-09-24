@@ -1,0 +1,29 @@
+{
+  "name": "printspot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PrintSpot — Self-Service Instant Print Shop",
+  "scripts": {
+    "dev": "concurrently -n \"backend,frontend\" -c \"blue,green\" \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:all": "concurrently -n \"backend,frontend,agent\" -c \"blue,green,magenta\" \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:agent\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:agent": "npm --prefix agent run dev",
+    "start:web": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build && npm --prefix agent run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:agent": "npm --prefix agent run build",
+    "start:frontend": "npm --prefix frontend run start",
+    "start:backend": "npm --prefix backend run start",
+    "start:agent": "npm --prefix agent run start"
+  },
+  "workspaces": [
+    "backend",
+    "frontend",
+    "agent"
+  ],
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

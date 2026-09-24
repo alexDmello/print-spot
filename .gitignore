@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+.next/
+out/
+
+# Database & Runtime Uploads
+backend/uploads/
+uploads/
+*.log
+
+# Environment variables
+.env
+.env*.local
+.env.production
+.env.development
+
+# OS & Temp
+.DS_Store
+Thumbs.db
+*.tsbuildinfo
