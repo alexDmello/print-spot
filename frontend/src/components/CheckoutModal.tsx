@@ -73,19 +73,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const imageFiles = files.filter(isImageFile);
   const otherFiles = files.filter((f) => !isImageFile(f));
-  const hasCombinedImages = imageFiles.length > 1 && !!files[0]?.combineImages;
+  const hasCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
 
   let printTotal = 0;
   let totalCopies = 0;
   let totalPhysicalSheets = 0;
 
   if (hasCombinedImages) {
-    const grid = imageFiles[0]?.pagesPerSheet || 6;
     const copies = imageFiles[0]?.copies || 1;
     const isColor = imageFiles.some((f) => f.color);
     const rate = isColor ? pricePerColor : pricePerBw;
-    const rawSheets = Math.ceil(imageFiles.length / grid);
-    const sheetsPerCopy = imageFiles[0]?.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+    const rawSheets = 1;
+    const sheetsPerCopy = 1;
     printTotal += sheetsPerCopy * copies * rate;
     totalCopies += copies;
     totalPhysicalSheets += sheetsPerCopy * copies;

@@ -100,7 +100,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   const imageFiles = files.filter(isImageFile);
   const otherFiles = files.filter((f) => !isImageFile(f));
-  const isCombinedImages = imageFiles.length > 1 && !!files[0]?.combineImages;
+  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
 
   const toggleCombineImages = () => {
     const nextCombined = !isCombinedImages;
@@ -135,12 +135,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
   let totalPhysicalSheets = 0;
 
   if (isCombinedImages) {
-    const grid = imageFiles[0]?.pagesPerSheet || 6;
     const copies = imageFiles[0]?.copies || 1;
     const isColor = imageFiles.some((f) => f.color);
     const rate = isColor ? pricePerColor : pricePerBw;
-    const rawSheets = Math.ceil(imageFiles.length / grid);
-    const sheetsPerCopy = imageFiles[0]?.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+    // Fit into 1 page means strictly 1 physical sheet per copy!
+    const rawSheets = 1;
+    const sheetsPerCopy = 1;
     const total = sheetsPerCopy * copies * rate;
 
     totalPrintCost += total;
@@ -215,29 +215,70 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
       {/* Multi-Image Combine Option (e.g. 6 or 9 images on 1 sheet) */}
       {imageFiles.length > 1 && (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
-              <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>Multi-Image Photo Sheet</span>
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 shadow-2xs space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
+                <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
+                <span>Multi-Image Photo Sheet</span>
+              </div>
+              <p className="text-[11px] text-purple-700">
+                {isCombinedImages
+                  ? `Fitting all ${imageFiles.length} photos onto 1 single page (${imageFiles[0]?.pagesPerSheet || 4}-in-1 layout)`
+                  : `Combine ${imageFiles.length} images into 1 single page (e.g. 4, 6 or 9 in 1)`}
+              </p>
             </div>
-            <p className="text-[11px] text-purple-700">
-              {isCombinedImages
-                ? `Fitting ${imageFiles.length} images onto shared sheet(s) (${imageFiles[0]?.pagesPerSheet || 6} in 1)`
-                : `Combine ${imageFiles.length} images into a single sheet (e.g. 6 or 9 images in 1)`}
-            </p>
+            <button
+              type="button"
+              onClick={toggleCombineImages}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                isCombinedImages
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50'
+              }`}
+            >
+              {isCombinedImages ? 'Fit into 1 Page ✓' : 'Fit into 1 Page'}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={toggleCombineImages}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-              isCombinedImages
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50'
-            }`}
-          >
-            {isCombinedImages ? 'Combined ✓' : 'Fit on 1 Sheet'}
-          </button>
+
+          {/* Quick Grid Picker directly on the banner when Fit into 1 Page is active */}
+          {isCombinedImages && (
+            <div className="pt-2 border-t border-purple-200/60 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                <span>Select Grid Layout on 1 Page:</span>
+                <span className="text-[10px] text-purple-600 font-semibold">
+                  {(imageFiles[0]?.pagesPerSheet || 4) > imageFiles.length
+                    ? `${(imageFiles[0]?.pagesPerSheet || 4) - imageFiles.length} extra spot(s) remain empty`
+                    : '1 Page fit'}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {([2, 4, 6, 9] as const).map((g) => {
+                  const isSelected = (imageFiles[0]?.pagesPerSheet || 4) === g;
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => {
+                        onFilesChange(
+                          files.map((f) =>
+                            isImageFile(f) ? { ...f, pagesPerSheet: g } : f
+                          )
+                        );
+                      }}
+                      className={`py-1.5 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                          : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/60'
+                      }`}
+                    >
+                      {g}-in-1 {g > imageFiles.length ? `(${g} spots)` : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -438,13 +479,14 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                           key={gridNum}
                           type="button"
                           onClick={() => {
-                            updateFileSetting(item.id, { pagesPerSheet: gridNum });
                             if (isCombinedImages && isImageFile(item)) {
                               onFilesChange(
                                 files.map((f) =>
                                   isImageFile(f) ? { ...f, pagesPerSheet: gridNum } : f
                                 )
                               );
+                            } else {
+                              updateFileSetting(item.id, { pagesPerSheet: gridNum });
                             }
                           }}
                           className={`py-1.5 px-1 rounded-lg border text-center text-xs font-bold transition-all cursor-pointer ${

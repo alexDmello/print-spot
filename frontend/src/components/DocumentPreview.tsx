@@ -67,8 +67,29 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   };
 
   const resolvedUrl = getResolvedUrl(fileUrl);
-  const effectivePageCount = (isPdf && pdfDoc?.numPages) ? pdfDoc.numPages : (activeFile?.pageCount || 1);
-  const currentGrid = activeFile?.pagesPerSheet || 1;
+
+  const isImageFile = (f: UploadedDocument) => {
+    const fileExt = (f.fileName.split('.').pop() || '').toLowerCase();
+    return (
+      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(fileExt) ||
+      (f.mimeType?.startsWith('image/') ?? false)
+    );
+  };
+
+  const imageFiles = files.filter(isImageFile);
+  const otherFiles = files.filter((f) => !isImageFile(f));
+  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+
+  const currentGrid = isCombinedImages
+    ? (imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 1)
+    : (activeFile?.pagesPerSheet || 1);
+
+  // If user selects "Fit into 1 Page", preview MUST have strictly 1 page!
+  const effectivePageCount = isCombinedImages
+    ? 1
+    : (isPdf && pdfDoc?.numPages)
+    ? pdfDoc.numPages
+    : (activeFile?.pageCount || 1);
 
   // Reset page when switching files
   useEffect(() => {
@@ -235,8 +256,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         </p>
       </div>
 
-      {/* Multi-File Switcher Tabs (If multiple documents uploaded) */}
-      {files.length > 1 && (
+      {/* Multi-File Switcher Tabs (If multiple documents uploaded and not combined into single sheet) */}
+      {files.length > 1 && !isCombinedImages && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[11px] text-slate-400 font-semibold px-0.5">
             <span>Select Document to Inspect:</span>
@@ -281,8 +302,8 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         {/* Document Header Bar */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
           <div className="flex items-center gap-2 overflow-hidden">
-            <span className="text-xs font-bold text-slate-900 truncate max-w-[150px]">
-              {fileName}
+            <span className="text-xs font-bold text-slate-900 truncate max-w-[170px]">
+              {isCombinedImages ? `Photo Sheet (${imageFiles.length} Photos)` : fileName}
             </span>
             <span
               className={`text-[10px] font-bold px-2 py-0.5 rounded ${
@@ -330,7 +351,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             </div>
           ) : (
             <span className="text-slate-500 font-medium text-[11px]">
-              Single Page Document
+              {isCombinedImages ? '1 Page Photo Sheet' : 'Single Page Document'}
             </span>
           )}
 
@@ -447,7 +468,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           {/* 2. IMAGE RENDERING */}
           {isImage && (
             <div>
-              {currentGrid === 1 && !activeFile?.combineImages ? (
+              {currentGrid === 1 && !isCombinedImages ? (
                 <div className="w-full min-h-[260px] max-h-[440px] bg-white rounded-none border border-slate-300 flex items-center justify-center p-2 overflow-hidden shadow-inner">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -457,7 +478,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   />
                 </div>
               ) : (
-                /* Multi-Image Grid (2, 4, 6, 9 in 1) */
+                /* Multi-Image Grid (2, 4, 6, 9 in 1) - NEVER REPEAT IMAGES */
                 <div
                   className={`grid gap-1.5 sm:gap-2 bg-white p-2 border border-slate-300 w-full ${
                     currentGrid === 2
@@ -468,36 +489,43 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   }`}
                 >
                   {Array.from({ length: currentGrid }).map((_, idx) => {
-                    const allImages = files.filter(
-                      (f) =>
-                        ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(
-                          (f.fileName.split('.').pop() || '').toLowerCase()
-                        ) || (f.mimeType?.startsWith('image/') ?? false)
-                    );
+                    const startIndex = (selectedPage - 1) * currentGrid;
+                    const imageIndex = startIndex + idx;
+                    const currentImg = isCombinedImages
+                      ? imageFiles[imageIndex]
+                      : imageIndex === 0
+                      ? activeFile
+                      : null;
 
-                    const slotFile =
-                      activeFile?.combineImages && allImages.length > 1
-                        ? allImages[idx % allImages.length]
-                        : activeFile;
-                    const slotUrl = getResolvedUrl(slotFile?.fileUrl || fileUrl);
+                    if (currentImg) {
+                      const imgUrl = getResolvedUrl(currentImg.fileUrl);
+                      return (
+                        <div
+                          key={idx}
+                          className="border border-slate-200 bg-white p-1 flex flex-col items-center justify-between min-h-[105px] max-h-[145px] overflow-hidden shadow-2xs"
+                        >
+                          <span className="text-[9px] font-bold text-slate-600 self-start truncate max-w-full">
+                            {imageIndex + 1}. {currentImg.fileName}
+                          </span>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={imgUrl}
+                            alt={currentImg.fileName}
+                            className="max-h-[90px] max-w-full object-contain"
+                          />
+                          <span className="text-[8px] text-slate-400 font-medium">Spot {idx + 1}</span>
+                        </div>
+                      );
+                    }
 
+                    // Empty Spot - Extra spots remain blank, NEVER repeat previous images
                     return (
                       <div
                         key={idx}
-                        className="border border-dashed border-slate-300 p-1 flex flex-col items-center justify-between bg-slate-50 min-h-[105px] max-h-[140px] overflow-hidden"
+                        className="border border-dashed border-slate-200 p-2 flex flex-col items-center justify-center bg-slate-50/50 min-h-[105px] max-h-[145px] select-none"
                       >
-                        <span className="text-[9px] font-bold text-slate-400 self-start truncate max-w-full">
-                          {activeFile?.combineImages && allImages.length > 1 && allImages[idx]
-                            ? `${idx + 1}. ${allImages[idx].fileName}`
-                            : `Slot ${idx + 1}`}
-                        </span>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={slotUrl}
-                          alt={`Slot ${idx + 1}`}
-                          className="max-h-[90px] max-w-full object-contain shadow-2xs border border-slate-200 bg-white"
-                        />
-                        <span className="text-[8px] text-slate-400">Photo Slot</span>
+                        <span className="text-[9px] font-bold text-slate-400">Spot {idx + 1}</span>
+                        <span className="text-[10px] text-slate-300 italic font-medium mt-1">Empty Spot</span>
                       </div>
                     );
                   })}
@@ -599,7 +627,15 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
         {/* Footer info: File details & format */}
         <div className="flex items-center justify-between pt-1 text-xs">
           <span className="text-slate-400 text-[11px]">
-            Format: <strong className="text-slate-700 uppercase">{ext || 'Document'}</strong> • {effectivePageCount} {effectivePageCount === 1 ? 'page' : 'pages'}
+            {isCombinedImages ? (
+              <>
+                Layout: <strong className="text-slate-700">{imageFiles.length} Photos in {currentGrid}-in-1 Grid</strong> • {effectivePageCount} {effectivePageCount === 1 ? 'page' : 'pages'}
+              </>
+            ) : (
+              <>
+                Format: <strong className="text-slate-700 uppercase">{ext || 'Document'}</strong> • {effectivePageCount} {effectivePageCount === 1 ? 'page' : 'pages'}
+              </>
+            )}
           </span>
           <span className="text-slate-500 text-[11px] font-medium">
             Copies to print: <strong className="text-[#0e7490]">{activeFile.copies}</strong>
