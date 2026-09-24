@@ -174,7 +174,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const totalPages = files.reduce((acc, f) => acc + (f.pageCount || 1), 0);
-  const estimatedMinCost = totalPages * (basePrice || 2);
 
   return (
     <div className="w-full max-w-md mx-auto space-y-4 pb-24">
@@ -344,8 +343,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
       {/* Sticky Bottom CTA */}
       <MobileBottomCta
-        label="Est. Subtotal"
-        value={files.length > 0 ? `₹${estimatedMinCost.toFixed(2)}` : '₹0.00'}
         buttonText={
           files.length > 0
             ? `Proceed to Settings (${files.length} ${files.length === 1 ? 'file' : 'files'})`
