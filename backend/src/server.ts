@@ -83,4 +83,10 @@ async function startServer(): Promise<void> {
   }
 }
 
-startServer();
+// Auto-start when run directly (not in Vercel Serverless environment)
+if (process.env.VERCEL !== '1' && !process.env.NOW_REGION) {
+  startServer();
+}
+
+export { app, httpServer, startServer };
+export default app;

@@ -15,6 +15,8 @@ export const config = {
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_mock_key_12345',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || 'rzp_mock_secret_abcdef',
   razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || 'rzp_webhook_secret_xyz',
-  uploadDir: path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
+  uploadDir: process.env.VERCEL
+    ? path.resolve('/tmp', 'uploads')
+    : path.resolve(process.cwd(), process.env.UPLOAD_DIR || 'uploads'),
   maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB || '50', 10),
 };
