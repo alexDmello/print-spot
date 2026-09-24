@@ -12,7 +12,6 @@ import {
   File,
   ChevronLeft,
   ChevronRight,
-  Layers,
 } from 'lucide-react';
 
 interface DocumentPreviewProps {
@@ -79,12 +78,6 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     setExcelData(null);
     setTextContent(null);
   }, [selectedFileId]);
-
-  const handleGridSelect = (newGrid: 1 | 2 | 4 | 6) => {
-    if (onGridChange && activeFile) {
-      onGridChange(activeFile.id, newGrid);
-    }
-  };
 
   // Load Real Content for Word, Excel, and Text files
   useEffect(() => {
@@ -303,24 +296,6 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
               {activeFile.copies} {activeFile.copies === 1 ? 'copy' : 'copies'}
             </span>
-          </div>
-
-          {/* Grid Selection Buttons (1, 2, 4, 6) */}
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs">
-            {([1, 2, 4, 6] as const).map((g) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => handleGridSelect(g)}
-                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
-                  currentGrid === g
-                    ? 'bg-[#0e7490] text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {g === 1 ? '1-up' : `${g}-up`}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -581,45 +556,6 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           </span>
         </div>
       </div>
-
-      {/* Page Thumbnails Row - Sharp Corners (rounded-none) */}
-      {effectivePageCount > 1 && (
-        <div className="space-y-2">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            All Pages in {fileName} ({effectivePageCount})
-          </span>
-
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {Array.from({ length: Math.min(20, effectivePageCount) }).map((_, idx) => {
-              const pgNum = idx + 1;
-              const isSelected = selectedPage === pgNum;
-              return (
-                <button
-                  key={pgNum}
-                  type="button"
-                  onClick={() => setSelectedPage(pgNum)}
-                  className={`w-14 h-18 rounded-none border flex flex-col items-center justify-between p-1.5 shrink-0 transition-all cursor-pointer ${
-                    isSelected
-                      ? 'border-2 border-[#0e7490] bg-[#ecfeff] shadow-sm font-black'
-                      : 'border-slate-300 bg-white hover:border-slate-400'
-                  }`}
-                >
-                  <span className="text-xs font-bold text-slate-800">{pgNum}</span>
-                  <span
-                    className={`text-[8px] font-bold uppercase px-1 py-0.2 rounded-none ${
-                      activeFile.color
-                        ? 'bg-purple-100 text-purple-700'
-                        : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {activeFile.color ? 'Color' : 'Mono'}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Sticky Bottom CTA */}
       <MobileBottomCta

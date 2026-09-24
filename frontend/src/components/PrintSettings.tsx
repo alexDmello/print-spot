@@ -264,52 +264,32 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1 flex-1">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateFileSetting(item.id, {
-                              copies: Math.max(1, (item.copies || 1) - 1),
-                            })
-                          }
-                          className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors"
-                        >
-                          -
-                        </button>
-                        <span className="flex-1 text-center font-bold text-slate-900 text-sm">
-                          {item.copies || 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateFileSetting(item.id, {
-                              copies: (item.copies || 1) + 1,
-                            })
-                          }
-                          className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors"
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      {/* Quick Copy Presets */}
-                      <div className="flex items-center gap-1">
-                        {[1, 2, 3, 5].map((num) => (
-                          <button
-                            key={num}
-                            type="button"
-                            onClick={() => updateFileSetting(item.id, { copies: num })}
-                            className={`w-7 h-8 rounded-lg text-xs font-bold transition-all ${
-                              item.copies === num
-                                ? 'bg-[#0e7490] text-white shadow-2xs'
-                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            {num}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1 w-full">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateFileSetting(item.id, {
+                            copies: Math.max(1, (item.copies || 1) - 1),
+                          })
+                        }
+                        className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-base"
+                      >
+                        -
+                      </button>
+                      <span className="flex-1 text-center font-bold text-slate-900 text-base">
+                        {item.copies || 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateFileSetting(item.id, {
+                            copies: (item.copies || 1) + 1,
+                          })
+                        }
+                        className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-base"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
 
