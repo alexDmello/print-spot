@@ -224,8 +224,8 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
               </div>
               <p className="text-[11px] text-purple-700">
                 {isCombinedImages
-                  ? `Fitting all ${imageFiles.length} photos onto 1 single page (${imageFiles[0]?.pagesPerSheet || 4}-in-1 layout)`
-                  : `Combine ${imageFiles.length} images into 1 single page (e.g. 4, 6 or 9 in 1)`}
+                  ? `Fitting all ${imageFiles.length} photos onto 1 A4 sheet (${imageFiles[0]?.pagesPerSheet || 4}-in-1 layout)`
+                  : `Combine ${imageFiles.length} images into 1 A4 sheet (e.g. 4, 6 or 9 in 1)`}
               </p>
             </div>
             <button
@@ -245,16 +245,17 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
           {isCombinedImages && (
             <div className="pt-2 border-t border-purple-200/60 space-y-1.5">
               <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
-                <span>Select Grid Layout on 1 Page:</span>
+                <span>Select Grid Layout on A4 Sheet:</span>
                 <span className="text-[10px] text-purple-600 font-semibold">
                   {(imageFiles[0]?.pagesPerSheet || 4) > imageFiles.length
                     ? `${(imageFiles[0]?.pagesPerSheet || 4) - imageFiles.length} extra spot(s) remain empty`
-                    : '1 Page fit'}
+                    : '1 A4 Sheet fit'}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {([2, 4, 6, 9] as const).map((g) => {
                   const isSelected = (imageFiles[0]?.pagesPerSheet || 4) === g;
+                  const label = g === 2 ? '2-in-1 (Halves)' : g === 4 ? '4-in-1 (2×2)' : g === 6 ? '6-in-1 (2×3)' : '9-in-1 (3×3)';
                   return (
                     <button
                       key={g}
@@ -266,13 +267,13 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                           )
                         );
                       }}
-                      className={`py-1.5 px-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                      className={`py-1.5 px-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border text-center ${
                         isSelected
                           ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
                           : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/60'
                       }`}
                     >
-                      {g}-in-1 {g > imageFiles.length ? `(${g} spots)` : ''}
+                      {label}
                     </button>
                   );
                 })}

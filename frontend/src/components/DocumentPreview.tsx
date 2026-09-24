@@ -91,6 +91,22 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
     ? pdfDoc.numPages
     : (activeFile?.pageCount || 1);
 
+  // Proportional grid layouts on portrait A4 paper sheet
+  const getGridClass = (grid: number) => {
+    switch (grid) {
+      case 2:
+        return 'grid-cols-1 grid-rows-2'; // 2 stacked halves on portrait A4
+      case 4:
+        return 'grid-cols-2 grid-rows-2'; // 2x2 quadrants on portrait A4
+      case 6:
+        return 'grid-cols-2 grid-rows-3'; // 2 across, 3 down on portrait A4
+      case 9:
+        return 'grid-cols-3 grid-rows-3'; // 3 across, 3 down on portrait A4
+      default:
+        return 'grid-cols-1 grid-rows-1';
+    }
+  };
+
   // Reset page when switching files
   useEffect(() => {
     setSelectedPage(1);
@@ -384,244 +400,244 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           )}
         </div>
 
-        {/* PHYSICAL PAPER SHEET CONTAINER: STRICTLY NON-ROUNDED (SHARP 90° CORNERS) */}
-        <div
-          style={colorFilterStyle}
-          className="rounded-none bg-slate-100 border-2 border-slate-300 p-2 sm:p-3 shadow-md transition-all relative"
-        >
-          {/* Header indicator on paper */}
-          <div className="flex items-center justify-between pb-1.5 text-[10px] text-slate-400 font-semibold border-b border-slate-200 mb-2">
-            <span>Physical Paper Stock (Sharp 90° Cut)</span>
-            <span className="uppercase">
-              {ext} • {currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
+        {/* PHYSICAL A4 PAPER SHEET CONTAINER (210 × 297 mm ISO Ratio) */}
+        <div className="bg-slate-200/60 p-2.5 sm:p-4 rounded-2xl flex flex-col items-center justify-center border border-slate-200/80 shadow-inner">
+          {/* Header indicator above paper */}
+          <div className="w-full max-w-[340px] sm:max-w-[365px] flex items-center justify-between pb-1 text-[10px] text-slate-500 font-semibold mb-1">
+            <span className="flex items-center gap-1 font-bold text-slate-700">
+              <FileText className="w-3 h-3 text-[#0e7490]" />
+              A4 Sheet (210 × 297 mm)
+            </span>
+            <span className="text-[9px] bg-white px-2 py-0.5 rounded border border-slate-300 font-bold text-slate-600 uppercase">
+              {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
             </span>
           </div>
 
-          {/* 1. PDF DOCUMENT RENDERING */}
-          {isPdf && (
-            <div>
-              {currentGrid === 1 ? (
-                pdfViewMode === 'native' ? (
-                  /* High-Res Native Embedded PDF Viewer */
-                  <div className="w-full h-[400px] sm:h-[450px] bg-white rounded-none border border-slate-300 overflow-hidden shadow-inner">
-                    <object
-                      data={`${resolvedUrl}#page=${selectedPage}&toolbar=0&navpanes=0`}
-                      type="application/pdf"
-                      className="w-full h-full border-0 rounded-none"
-                    >
-                      <iframe
-                        src={`${resolvedUrl}#page=${selectedPage}&toolbar=0&navpanes=0`}
+          {/* PHYSICAL A4 PAPER: STRICTLY NON-ROUNDED (SHARP 90° CUT), EXACT 210:297 ASPECT RATIO */}
+          <div
+            style={{ aspectRatio: '210 / 297', ...colorFilterStyle }}
+            className="w-full max-w-[340px] sm:max-w-[365px] bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 p-2 sm:p-2.5 transition-all relative flex flex-col justify-between select-none overflow-hidden"
+          >
+            {/* 1. PDF DOCUMENT RENDERING */}
+            {isPdf && (
+              <div className="h-full w-full overflow-hidden flex flex-col">
+                {currentGrid === 1 ? (
+                  pdfViewMode === 'native' ? (
+                    <div className="w-full h-full bg-white rounded-none overflow-hidden">
+                      <object
+                        data={`${resolvedUrl}#page=${selectedPage}&toolbar=0&navpanes=0`}
+                        type="application/pdf"
                         className="w-full h-full border-0 rounded-none"
-                        title={fileName}
-                      />
-                    </object>
+                      >
+                        <iframe
+                          src={`${resolvedUrl}#page=${selectedPage}&toolbar=0&navpanes=0`}
+                          className="w-full h-full border-0 rounded-none"
+                          title={fileName}
+                        />
+                      </object>
+                    </div>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-white overflow-hidden p-1">
+                      {isPdfLoading ? (
+                        <div className="flex flex-col items-center gap-2 py-16 text-slate-400">
+                          <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
+                          <span className="text-xs font-semibold">
+                            Rendering A4 page {selectedPage}...
+                          </span>
+                        </div>
+                      ) : (
+                        <canvas
+                          ref={(el) => {
+                            canvasRefs.current[0] = el;
+                          }}
+                          className="max-w-full max-h-full object-contain shadow-2xs rounded-none border border-slate-200 bg-white"
+                        />
+                      )}
+                    </div>
+                  )
+                ) : (
+                  /* Multi-Page Grid (2, 4, 6, 9 in 1) using PDF.js inside A4 */
+                  <div className={`grid ${getGridClass(currentGrid)} gap-1.5 w-full h-full`}>
+                    {Array.from({ length: currentGrid }).map((_, idx) => (
+                      <div
+                        key={idx}
+                        className="border border-dashed border-slate-300 p-1 flex flex-col items-center justify-between bg-slate-50 overflow-hidden h-full w-full"
+                      >
+                        <span className="text-[8px] font-bold text-slate-400 self-start">
+                          Slot {idx + 1} (Pg {Math.min(idx + 1, effectivePageCount)})
+                        </span>
+                        <div className="flex-1 min-h-0 w-full flex items-center justify-center p-0.5 overflow-hidden">
+                          <canvas
+                            ref={(el) => {
+                              canvasRefs.current[idx] = el;
+                            }}
+                            className="max-w-full max-h-full object-contain shadow-2xs border border-slate-200 bg-white"
+                          />
+                        </div>
+                        <span className="text-[7px] text-slate-400">Print Area</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. IMAGE RENDERING */}
+            {isImage && (
+              <div className="h-full w-full overflow-hidden flex flex-col">
+                {currentGrid === 1 && !isCombinedImages ? (
+                  <div className="w-full h-full bg-white flex items-center justify-center p-2 overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={resolvedUrl}
+                      alt={fileName}
+                      className="max-h-full max-w-full object-contain rounded-none shadow-2xs"
+                    />
                   </div>
                 ) : (
-                  /* PDF.js Canvas Render */
-                  <div className="w-full flex items-center justify-center bg-white border border-slate-300 p-2 min-h-[380px] overflow-auto">
-                    {isPdfLoading ? (
-                      <div className="flex flex-col items-center gap-2 py-16 text-slate-400">
-                        <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
-                        <span className="text-xs font-semibold">
-                          Rendering page {selectedPage} vector spool...
-                        </span>
-                      </div>
-                    ) : (
-                      <canvas
-                        ref={(el) => {
-                          canvasRefs.current[0] = el;
-                        }}
-                        className="max-w-full h-auto shadow-sm rounded-none border border-slate-200"
-                      />
-                    )}
-                  </div>
-                )
-              ) : (
-                /* Multi-Page Grid (2, 4, 6 in 1) using PDF.js */
-                <div
-                  className={`grid gap-2 bg-white p-2 border border-slate-300 ${
-                    currentGrid === 2 ? 'grid-cols-2' : currentGrid === 4 ? 'grid-cols-2' : 'grid-cols-3'
-                  }`}
-                >
-                  {Array.from({ length: currentGrid }).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="border border-dashed border-slate-300 p-1 flex flex-col items-center justify-between bg-slate-50 min-h-[140px]"
-                    >
-                      <span className="text-[9px] font-bold text-slate-400 self-start">
-                        Slot {idx + 1} (Page {Math.min(idx + 1, effectivePageCount)})
-                      </span>
-                      <canvas
-                        ref={(el) => {
-                          canvasRefs.current[idx] = el;
-                        }}
-                        className="max-w-full max-h-[160px] object-contain shadow-2xs border border-slate-200 bg-white"
-                      />
-                      <span className="text-[8px] text-slate-400">Print Area</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                  /* Multi-Image Grid (2, 4, 6, 9 in 1) arranged on portrait A4 sheet */
+                  <div className={`grid ${getGridClass(currentGrid)} gap-1.5 w-full h-full`}>
+                    {Array.from({ length: currentGrid }).map((_, idx) => {
+                      const currentImg = isCombinedImages
+                        ? imageFiles[idx]
+                        : idx === 0
+                        ? activeFile
+                        : null;
 
-          {/* 2. IMAGE RENDERING */}
-          {isImage && (
-            <div>
-              {currentGrid === 1 && !isCombinedImages ? (
-                <div className="w-full min-h-[260px] max-h-[440px] bg-white rounded-none border border-slate-300 flex items-center justify-center p-2 overflow-hidden shadow-inner">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={resolvedUrl}
-                    alt={fileName}
-                    className="max-h-[420px] max-w-full object-contain rounded-none"
-                  />
-                </div>
-              ) : (
-                /* Multi-Image Grid (2, 4, 6, 9 in 1) - NEVER REPEAT IMAGES */
-                <div
-                  className={`grid gap-1.5 sm:gap-2 bg-white p-2 border border-slate-300 w-full ${
-                    currentGrid === 2
-                      ? 'grid-cols-2'
-                      : currentGrid === 4
-                      ? 'grid-cols-2'
-                      : 'grid-cols-3'
-                  }`}
-                >
-                  {Array.from({ length: currentGrid }).map((_, idx) => {
-                    const startIndex = (selectedPage - 1) * currentGrid;
-                    const imageIndex = startIndex + idx;
-                    const currentImg = isCombinedImages
-                      ? imageFiles[imageIndex]
-                      : imageIndex === 0
-                      ? activeFile
-                      : null;
+                      if (currentImg) {
+                        const imgUrl = getResolvedUrl(currentImg.fileUrl);
+                        return (
+                          <div
+                            key={idx}
+                            className="border border-slate-200 bg-white p-1 flex flex-col items-center justify-between overflow-hidden shadow-2xs h-full w-full relative"
+                          >
+                            <div className="w-full flex items-center justify-between text-[7.5px] font-bold text-slate-500 leading-none px-0.5 pt-0.5">
+                              <span className="truncate max-w-[80%]">{idx + 1}. {currentImg.fileName}</span>
+                              <span className="text-slate-400 font-mono">#{idx + 1}</span>
+                            </div>
+                            <div className="flex-1 min-h-0 w-full flex items-center justify-center p-0.5 overflow-hidden">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={imgUrl}
+                                alt={currentImg.fileName}
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                            <span className="text-[7px] text-slate-400 font-semibold leading-none pb-0.5">Spot {idx + 1}</span>
+                          </div>
+                        );
+                      }
 
-                    if (currentImg) {
-                      const imgUrl = getResolvedUrl(currentImg.fileUrl);
+                      // Empty Spot - Extra spots remain blank, NEVER repeat previous images
                       return (
                         <div
                           key={idx}
-                          className="border border-slate-200 bg-white p-1 flex flex-col items-center justify-between min-h-[105px] max-h-[145px] overflow-hidden shadow-2xs"
+                          className="border border-dashed border-slate-300 bg-slate-50/50 p-1 flex flex-col items-center justify-center text-center select-none h-full w-full"
                         >
-                          <span className="text-[9px] font-bold text-slate-600 self-start truncate max-w-full">
-                            {imageIndex + 1}. {currentImg.fileName}
-                          </span>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={imgUrl}
-                            alt={currentImg.fileName}
-                            className="max-h-[90px] max-w-full object-contain"
-                          />
-                          <span className="text-[8px] text-slate-400 font-medium">Spot {idx + 1}</span>
+                          <span className="text-[8.5px] font-bold text-slate-400">Spot {idx + 1}</span>
+                          <span className="text-[7.5px] text-slate-300 italic font-medium mt-0.5">Empty Spot</span>
                         </div>
                       );
-                    }
-
-                    // Empty Spot - Extra spots remain blank, NEVER repeat previous images
-                    return (
-                      <div
-                        key={idx}
-                        className="border border-dashed border-slate-200 p-2 flex flex-col items-center justify-center bg-slate-50/50 min-h-[105px] max-h-[145px] select-none"
-                      >
-                        <span className="text-[9px] font-bold text-slate-400">Spot {idx + 1}</span>
-                        <span className="text-[10px] text-slate-300 italic font-medium mt-1">Empty Spot</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 3. WORD DOCUMENT (.DOCX) RENDERING */}
-          {isWordDoc && (
-            <div className="w-full min-h-[320px] max-h-[450px] bg-white rounded-none border border-slate-300 p-5 overflow-y-auto text-left shadow-inner">
-              {isLoadingContent ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
-                  <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
-                  <span className="text-xs">Parsing Word formatting & typography...</span>
-                </div>
-              ) : wordHtml ? (
-                <div
-                  className="prose prose-sm max-w-none text-slate-800 text-xs leading-relaxed space-y-2"
-                  dangerouslySetInnerHTML={{ __html: wordHtml }}
-                />
-              ) : (
-                <div className="p-8 text-center text-slate-400 text-xs">
-                  <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                  <p className="font-bold text-slate-700">Word Document Ready</p>
-                  <p>{fileName}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 4. EXCEL SPREADSHEET RENDERING */}
-          {isSpreadsheet && (
-            <div className="w-full min-h-[280px] max-h-[420px] bg-white rounded-none border border-slate-300 overflow-auto text-left shadow-inner">
-              {isLoadingContent ? (
-                <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
-                  <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
-                  <span className="text-xs">Extracting worksheet rows & columns...</span>
-                </div>
-              ) : excelData && excelData.rows.length > 0 ? (
-                <div className="text-[11px] font-mono">
-                  <div className="bg-emerald-100 text-emerald-900 px-3 py-1.5 font-bold text-[10px] flex items-center justify-between border-b border-emerald-200">
-                    <span>Worksheet: {excelData.sheetName}</span>
-                    <span>{excelData.rows.length} rows previewed</span>
+                    })}
                   </div>
-                  <table className="w-full border-collapse">
-                    <tbody>
-                      {excelData.rows.map((row, rIdx) => (
-                        <tr
-                          key={rIdx}
-                          className={rIdx === 0 ? 'bg-slate-100 font-bold border-b border-slate-300' : 'border-b border-slate-100 hover:bg-slate-50'}
-                        >
-                          <td className="px-2 py-1 text-slate-400 text-[9px] bg-slate-50 border-r border-slate-200 w-8 select-none text-center">
-                            {rIdx + 1}
-                          </td>
-                          {row.map((cell: any, cIdx: number) => (
-                            <td key={cIdx} className="px-2.5 py-1 text-slate-800 border-r border-slate-100 truncate max-w-[140px]">
-                              {String(cell ?? '')}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="p-8 text-center text-slate-400 text-xs">
-                  <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                  <p className="font-bold text-slate-700">Spreadsheet Ready</p>
-                  <p>{fileName}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 5. TEXT / CODE RENDERING */}
-          {isCodeOrText && (
-            <div className="w-full min-h-[260px] max-h-[420px] bg-slate-900 text-slate-200 rounded-none border border-slate-700 p-3 overflow-auto font-mono text-[11px] text-left">
-              <div className="text-slate-400 text-[10px] pb-1.5 mb-2 border-b border-slate-800 flex items-center justify-between">
-                <span>{fileName}</span>
-                <span>ASCII / UTF-8 Text</span>
+                )}
               </div>
-              <pre className="whitespace-pre-wrap leading-relaxed">{textContent || 'Loading content...'}</pre>
-            </div>
-          )}
+            )}
 
-          {/* 6. PRESENTATION OR OTHER UNRECOGNIZED FILE */}
-          {!isPdf && !isImage && !isWordDoc && !isSpreadsheet && !isCodeOrText && (
-            <div className="w-full min-h-[240px] bg-white rounded-none border border-slate-300 p-8 text-center flex flex-col items-center justify-center space-y-2">
-              <File className="w-10 h-10 text-[#0e7490]" />
-              <h4 className="font-bold text-slate-900 text-xs">{fileName}</h4>
-              <p className="text-[11px] text-slate-500 max-w-[240px]">
-                Universal binary file queued for hardware spooling. Document format preserved as uploaded.
-              </p>
-            </div>
-          )}
+            {/* 3. WORD DOCUMENT (.DOCX) RENDERING */}
+            {isWordDoc && (
+              <div className="w-full h-full bg-white p-3 sm:p-4 overflow-y-auto text-left shadow-inner">
+                {isLoadingContent ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+                    <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
+                    <span className="text-xs">Parsing Word formatting...</span>
+                  </div>
+                ) : wordHtml ? (
+                  <div
+                    className="prose prose-sm max-w-none text-slate-800 text-[11px] leading-relaxed space-y-1.5"
+                    dangerouslySetInnerHTML={{ __html: wordHtml }}
+                  />
+                ) : (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="font-bold text-slate-700">Word Document Ready</p>
+                    <p>{fileName}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4. EXCEL SPREADSHEET RENDERING */}
+            {isSpreadsheet && (
+              <div className="w-full h-full bg-white overflow-auto text-left shadow-inner text-[10px]">
+                {isLoadingContent ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+                    <RotateCw className="w-6 h-6 animate-spin text-[#0e7490]" />
+                    <span className="text-xs">Extracting worksheet rows...</span>
+                  </div>
+                ) : excelData && excelData.rows.length > 0 ? (
+                  <div className="font-mono text-[10px]">
+                    <div className="bg-emerald-100 text-emerald-900 px-2 py-1 font-bold text-[9px] flex items-center justify-between border-b border-emerald-200">
+                      <span>Worksheet: {excelData.sheetName}</span>
+                      <span>{excelData.rows.length} rows</span>
+                    </div>
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        {excelData.rows.map((row, rIdx) => (
+                          <tr
+                            key={rIdx}
+                            className={rIdx === 0 ? 'bg-slate-100 font-bold border-b border-slate-300' : 'border-b border-slate-100'}
+                          >
+                            <td className="px-1.5 py-0.5 text-slate-400 text-[8px] bg-slate-50 border-r border-slate-200 w-6 select-none text-center">
+                              {rIdx + 1}
+                            </td>
+                            {row.map((cell: any, cIdx: number) => (
+                              <td key={cIdx} className="px-2 py-0.5 text-slate-800 border-r border-slate-100 truncate max-w-[120px]">
+                                {String(cell ?? '')}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="p-8 text-center text-slate-400 text-xs">
+                    <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="font-bold text-slate-700">Spreadsheet Ready</p>
+                    <p>{fileName}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 5. TEXT / CODE RENDERING */}
+            {isCodeOrText && (
+              <div className="w-full h-full bg-slate-900 text-slate-200 p-2.5 overflow-auto font-mono text-[10px] text-left">
+                <div className="text-slate-400 text-[9px] pb-1 mb-1.5 border-b border-slate-800 flex items-center justify-between">
+                  <span>{fileName}</span>
+                  <span>ASCII / UTF-8</span>
+                </div>
+                <pre className="whitespace-pre-wrap leading-relaxed">{textContent || 'Loading content...'}</pre>
+              </div>
+            )}
+
+            {/* 6. PRESENTATION OR OTHER UNRECOGNIZED FILE */}
+            {!isPdf && !isImage && !isWordDoc && !isSpreadsheet && !isCodeOrText && (
+              <div className="w-full h-full bg-white rounded-none p-6 text-center flex flex-col items-center justify-center space-y-2">
+                <File className="w-8 h-8 text-[#0e7490]" />
+                <h4 className="font-bold text-slate-900 text-xs">{fileName}</h4>
+                <p className="text-[10px] text-slate-500 max-w-[220px]">
+                  Universal binary file queued for hardware spooling. Document format preserved.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Paper scale caption */}
+          <div className="w-full max-w-[340px] sm:max-w-[365px] text-center pt-2 text-[10px] text-slate-400 font-medium">
+            Scale-accurate print simulation on standard 80 GSM A4 paper
+          </div>
         </div>
 
         {/* Footer info: File details & format */}
@@ -629,7 +645,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           <span className="text-slate-400 text-[11px]">
             {isCombinedImages ? (
               <>
-                Layout: <strong className="text-slate-700">{imageFiles.length} Photos in {currentGrid}-in-1 Grid</strong> • {effectivePageCount} {effectivePageCount === 1 ? 'page' : 'pages'}
+                Layout: <strong className="text-slate-700">{imageFiles.length} Photos in {currentGrid}-in-1 Grid</strong> • 1 A4 Sheet
               </>
             ) : (
               <>
