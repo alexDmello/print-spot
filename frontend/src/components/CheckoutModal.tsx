@@ -73,7 +73,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const imageFiles = files.filter(isImageFile);
   const otherFiles = files.filter((f) => !isImageFile(f));
-  const hasCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+  const hasCombinedImages = imageFiles.length > 0;
 
   let printTotal = 0;
   let totalCopies = 0;
@@ -83,7 +83,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const copies = imageFiles[0]?.copies || 1;
     const isColor = imageFiles.some((f) => f.color);
     const rate = isColor ? pricePerColor : pricePerBw;
-    const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+    const currentGrid = (imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) || (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4);
     const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
     const duplex = imageFiles[0]?.duplex ?? false;
     const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
@@ -284,7 +284,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 const copies = imageFiles[0]?.copies || 1;
                 const isColor = imageFiles.some((f) => f.color);
                 const rate = isColor ? pricePerColor : pricePerBw;
-                const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+                const currentGrid = (imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) || (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4);
                 const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
                 const duplex = imageFiles[0]?.duplex ?? false;
                 const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
@@ -294,11 +294,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <div className="flex items-center justify-between text-xs gap-2 bg-purple-50/50 p-2 rounded-lg border border-purple-100">
                     <div className="truncate max-w-[210px] sm:max-w-[250px]">
                       <span className="font-bold text-purple-950 block truncate">
-                        📷 Photo Sheet • {imageFiles.length} Photos
+                        📷 {imageFiles.length === 1 ? 'Photo Print • 1 Photo' : `Photo Sheet • ${imageFiles.length} Photos`}
                       </span>
                       <span className="text-[10px] text-purple-700 font-medium">
                         {copies} {copies === 1 ? 'copy' : 'copies'} × {sheetsPerCopy}{' '}
-                        {sheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'} • {isColor ? 'Color' : 'B&W'} • {currentGrid}-in-1 Grid • {(imageFiles[0]?.orientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait'}{duplex ? ' • Duplex' : ''}
+                        {sheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'} • {isColor ? 'Color' : 'B&W'} • {currentGrid === 1 ? '1-in-1' : `${currentGrid}-in-1`} Grid • {(imageFiles[0]?.orientation || 'landscape') === 'landscape' ? 'Landscape' : 'Portrait'}{duplex ? ' • Duplex' : ''}
                       </span>
                     </div>
                     <span className="font-bold text-purple-950 shrink-0">

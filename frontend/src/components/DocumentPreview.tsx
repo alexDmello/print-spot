@@ -39,7 +39,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
   const imageFiles = files.filter(isImageFile);
   const otherFiles = files.filter((f) => !isImageFile(f));
-  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+  const isCombinedImages = imageFiles.length > 0;
 
   const [selectedFileId, setSelectedFileId] = useState<string>(
     isCombinedImages ? '__photo_sheet__' : files[0]?.id || ''
@@ -99,7 +99,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const resolvedUrl = getResolvedUrl(fileUrl);
 
   const currentGrid = isPreviewingPhotoSheet
-    ? (imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4)
+    ? ((imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) || (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4))
     : (activeFile?.pagesPerSheet || 1);
 
   // Calculate physical sheets required for Photo Sheet (e.g. 10 photos on 9-in-1 = 2 sheets)
@@ -336,7 +336,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                 }`}
               >
                 <ImageIcon className="w-3.5 h-3.5" />
-                <span>Photo Sheet • {imageFiles.length} Photos</span>
+                <span>{imageFiles.length === 1 ? 'Photo Print • 1 Photo' : `Photo Sheet • ${imageFiles.length} Photos`}</span>
                 <span
                   className={`text-[9px] px-1.5 py-0.2 rounded font-bold ${
                     isPreviewingPhotoSheet ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
@@ -479,7 +479,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </span>
             </div>
             <span className="text-[9px] bg-white px-2 py-0.5 rounded border border-slate-300 font-bold text-slate-600 uppercase">
-              {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
+              {isCombinedImages ? (currentGrid === 1 ? '1 in 1' : `${currentGrid}-in-1 Grid`) : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
             </span>
           </div>
 
@@ -719,7 +719,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           <span className="text-slate-400 text-[11px]">
             {isCombinedImages ? (
               <>
-                Layout: <strong className="text-slate-700">{imageFiles.length} Photos in {currentGrid}-in-1 Grid</strong> • 1 A4 Sheet
+                Layout: <strong className="text-slate-700">{imageFiles.length === 1 ? '1 Photo' : `${imageFiles.length} Photos`} in {currentGrid === 1 ? '1 in 1' : `${currentGrid}-in-1`}</strong> • {photoSheetPages} {photoSheetPages === 1 ? 'A4 Sheet' : 'A4 Sheets'}
               </>
             ) : (
               <>

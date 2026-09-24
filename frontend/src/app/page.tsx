@@ -113,7 +113,7 @@ export default function CustomerApp() {
 
     const imageFiles = files.filter(isImageFile);
     const otherFiles = files.filter((f) => !isImageFile(f));
-    const hasCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+    const hasCombinedImages = imageFiles.length > 0;
 
     let printTotal = 0;
     let totalCopies = 0;
@@ -123,7 +123,7 @@ export default function CustomerApp() {
       const copies = imageFiles[0]?.copies || 1;
       const isColor = imageFiles.some((f) => f.color);
       const rate = isColor ? pricePerColor : pricePerBw;
-      const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
+      const currentGrid = (imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) || (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4);
       const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
       const duplex = imageFiles[0]?.duplex ?? false;
       const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;

@@ -167,6 +167,13 @@ const MiniPhotoSheetPreview: React.FC<{
   const currentSheetImages = images.slice(startIndex, startIndex + grid);
   const totalSlots = grid;
 
+  const getResolvedUrl = (url?: string) => {
+    if (!url) return '';
+    const match = url.match(/\/uploads\/[^?#]+/);
+    if (match) return match[0];
+    return url;
+  };
+
   const getGridClass = () => {
     if (orientation === 'landscape') {
       switch (grid) {
@@ -199,7 +206,7 @@ const MiniPhotoSheetPreview: React.FC<{
 
   return (
     <div className="bg-gradient-to-b from-purple-50/70 to-slate-100/90 rounded-xl p-3 border border-purple-200/70 flex flex-col items-center justify-center shadow-inner">
-      {/* Pagination Bar (if multi-sheet) */}
+      {/* Pagination Bar (when photos span across multiple sheets) */}
       {totalSheets > 1 && (
         <div className="w-full flex items-center justify-between text-[11px] font-semibold text-purple-900 mb-2 px-1">
           <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">
@@ -226,37 +233,33 @@ const MiniPhotoSheetPreview: React.FC<{
         </div>
       )}
 
-      {/* Realistic Simulated Paper Sheet */}
+      {/* Realistic Simulated Paper Sheet (White Paper with Margins) */}
       <div
-        className={`bg-white border border-slate-300/90 rounded-md shadow-md p-1.5 transition-all duration-300 flex items-center justify-center ${
+        className={`bg-white border border-slate-300 shadow-md p-2 transition-all duration-300 flex items-center justify-center ${
           orientation === 'landscape'
-            ? 'w-full max-w-[240px] aspect-[297/210]'
-            : 'w-full max-w-[170px] aspect-[210/297]'
+            ? 'w-full max-w-[250px] aspect-[297/210]'
+            : 'w-full max-w-[180px] aspect-[210/297]'
         }`}
         style={{
           filter: !color ? 'grayscale(100%) contrast(115%)' : 'none',
         }}
       >
-        <div className={`w-full h-full grid gap-1 ${getGridClass()}`}>
+        <div className={`w-full h-full grid gap-1.5 ${getGridClass()}`}>
           {Array.from({ length: totalSlots }).map((_, slotIdx) => {
             const img = currentSheetImages[slotIdx];
-            const globalIdx = startIndex + slotIdx + 1;
 
             if (img) {
               return (
                 <div
                   key={img.id}
-                  className="relative w-full h-full rounded border border-slate-200/80 overflow-hidden bg-slate-100 flex items-center justify-center shadow-2xs"
+                  className="w-full h-full flex items-center justify-center p-0.5 overflow-hidden"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={img.fileUrl}
+                    src={getResolvedUrl(img.fileUrl)}
                     alt=""
-                    className="w-full h-full object-cover"
+                    className="max-h-full max-w-full object-contain select-none"
                   />
-                  <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[7px] font-bold px-1 rounded-tl leading-tight">
-                    #{globalIdx}
-                  </span>
                 </div>
               );
             }
@@ -264,10 +267,10 @@ const MiniPhotoSheetPreview: React.FC<{
             return (
               <div
                 key={`empty-${slotIdx}`}
-                className="w-full h-full rounded border border-dashed border-slate-200 bg-slate-50/60 flex items-center justify-center"
+                className="w-full h-full border border-dashed border-slate-200/90 rounded flex items-center justify-center bg-slate-50/20"
               >
-                <span className="text-[7.5px] text-slate-300 font-bold">
-                  Empty
+                <span className="text-[7.5px] text-slate-300 font-medium select-none">
+                  Blank
                 </span>
               </div>
             );
@@ -277,7 +280,7 @@ const MiniPhotoSheetPreview: React.FC<{
 
       {/* Caption below sheet */}
       <div className="mt-2 text-center text-[10px] text-purple-800 font-semibold">
-        A4 {orientation === 'landscape' ? 'Landscape' : 'Portrait'} • {grid} in 1 Layout
+        A4 {orientation === 'landscape' ? 'Landscape' : 'Portrait'} • {grid === 1 ? '1 in 1' : `${grid} in 1`}
       </div>
     </div>
   );
@@ -325,16 +328,36 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   const imageFiles = files.filter(isImageFile);
   const otherFiles = files.filter((f) => !isImageFile(f));
-  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+  const hasImages = imageFiles.length > 0;
 
   // Single active open section (accordion behavior: opening one section closes the previous)
   const [openCardId, setOpenCardId] = useState<string | null>(
-    isCombinedImages ? '__photo_sheet__' : (files[0]?.id ?? null)
+    hasImages ? '__photo_sheet__' : (files[0]?.id ?? null)
   );
 
   const toggleCard = (cardId: string) => {
     setOpenCardId((current) => (current === cardId ? null : cardId));
   };
+
+  // Automatically ensure all uploaded images are marked as unified photo sheet
+  useEffect(() => {
+    if (hasImages && imageFiles.some((f) => !f.combineImages)) {
+      const defaultGrid: 1 | 2 | 4 | 6 | 9 =
+        imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4;
+      onFilesChange(
+        files.map((f) =>
+          isImageFile(f)
+            ? {
+                ...f,
+                combineImages: true,
+                pagesPerSheet: f.combineImages ? (f.pagesPerSheet || defaultGrid) : defaultGrid,
+                orientation: f.orientation || 'landscape',
+              }
+            : f
+        )
+      );
+    }
+  }, [hasImages, imageFiles, files, onFilesChange]);
 
   // Auto-switch file color mode if disabled by shopkeeper
   useEffect(() => {
@@ -377,7 +400,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   // Keep openCardId pointed to a valid section if files change
   useEffect(() => {
-    if (isCombinedImages) {
+    if (hasImages) {
       if (openCardId !== '__photo_sheet__' && !otherFiles.some((f) => f.id === openCardId)) {
         setOpenCardId('__photo_sheet__');
       }
@@ -386,25 +409,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         setOpenCardId(files[0]?.id ?? null);
       }
     }
-  }, [files, isCombinedImages, otherFiles, openCardId]);
-
-  const toggleCombineImages = () => {
-    const nextCombined = !isCombinedImages;
-    const defaultGrid: 1 | 2 | 4 | 6 | 9 =
-      imageFiles.length <= 2 ? 2 : imageFiles.length <= 4 ? 4 : imageFiles.length <= 6 ? 6 : 9;
-    onFilesChange(
-      files.map((f) =>
-        isImageFile(f)
-          ? {
-              ...f,
-              combineImages: nextCombined,
-              pagesPerSheet: nextCombined ? defaultGrid : 1,
-            }
-          : f
-      )
-    );
-    setOpenCardId(nextCombined ? '__photo_sheet__' : (imageFiles[0]?.id || files[0]?.id));
-  };
+  }, [files, hasImages, otherFiles, openCardId]);
 
   // Helper to calculate sheets and cost for a single file
   const calculateFileCost = (file: UploadedDocument) => {
@@ -416,24 +421,29 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     return { rawSheets, sheetsPerCopy, rate, total };
   };
 
+  // Photo sheet unified variables
+  const photoSheetCopies = imageFiles[0]?.copies || 1;
+  const photoSheetColor = imageFiles.some((f) => f.color !== false);
+  const photoSheetOrientation: 'portrait' | 'landscape' =
+    imageFiles[0]?.orientation || 'landscape';
+  const photoSheetGrid: 1 | 2 | 4 | 6 | 9 =
+    (imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) ||
+    (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4);
+  const photoSheetRawSheets = Math.max(1, Math.ceil(imageFiles.length / photoSheetGrid));
+  const photoSheetDuplex = imageFiles[0]?.duplex ?? false;
+  const photoSheetSheetsPerCopy = photoSheetDuplex ? Math.ceil(photoSheetRawSheets / 2) : photoSheetRawSheets;
+  const photoSheetRate = photoSheetColor ? pricePerColor : pricePerBw;
+  const photoSheetTotal = photoSheetSheetsPerCopy * photoSheetCopies * photoSheetRate;
+
   // Total print cost across all files
   let totalPrintCost = 0;
   let totalCopies = 0;
   let totalPhysicalSheets = 0;
 
-  if (isCombinedImages) {
-    const copies = imageFiles[0]?.copies || 1;
-    const isColor = imageFiles.some((f) => f.color);
-    const rate = isColor ? pricePerColor : pricePerBw;
-    const currentGrid = imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet || imageFiles[0]?.pagesPerSheet || 4;
-    const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
-    const duplex = imageFiles[0]?.duplex ?? false;
-    const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
-    const total = sheetsPerCopy * copies * rate;
-
-    totalPrintCost += total;
-    totalCopies += copies;
-    totalPhysicalSheets += sheetsPerCopy * copies;
+  if (hasImages) {
+    totalPrintCost += photoSheetTotal;
+    totalCopies += photoSheetCopies;
+    totalPhysicalSheets += photoSheetSheetsPerCopy * photoSheetCopies;
 
     otherFiles.forEach((f) => {
       const { sheetsPerCopy, total } = calculateFileCost(f);
@@ -452,29 +462,14 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   const grandTotal = totalPrintCost;
 
-  // Photo sheet unified variables
-  const photoSheetCopies = imageFiles[0]?.copies || 1;
-  const photoSheetColor = imageFiles.some((f) => f.color !== false);
-  const photoSheetOrientation: 'portrait' | 'landscape' =
-    imageFiles[0]?.orientation || 'landscape';
-  const photoSheetGrid =
-    imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet ||
-    imageFiles[0]?.pagesPerSheet ||
-    4;
-  const photoSheetRawSheets = Math.max(1, Math.ceil(imageFiles.length / photoSheetGrid));
-  const photoSheetDuplex = imageFiles[0]?.duplex ?? false;
-  const photoSheetSheetsPerCopy = photoSheetDuplex ? Math.ceil(photoSheetRawSheets / 2) : photoSheetRawSheets;
-  const photoSheetRate = photoSheetColor ? pricePerColor : pricePerBw;
-  const photoSheetTotal = photoSheetSheetsPerCopy * photoSheetCopies * photoSheetRate;
-
   const updatePhotoSheetSetting = (updates: Partial<UploadedDocument>) => {
     onFilesChange(
-      files.map((f) => (isImageFile(f) ? { ...f, ...updates } : f))
+      files.map((f) => (isImageFile(f) ? { ...f, ...updates, combineImages: true } : f))
     );
   };
 
-  const displayFiles = isCombinedImages ? otherFiles : files;
-  const totalCards = displayFiles.length + (isCombinedImages ? 1 : 0);
+  const displayFiles = hasImages ? otherFiles : files;
+  const totalCards = (hasImages ? 1 : 0) + otherFiles.length;
   const isPhotoSheetOpen = openCardId === '__photo_sheet__';
 
   const getFileIcon = (fileName: string, mime?: string) => {
@@ -509,41 +504,19 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         </p>
       </div>
 
-      {/* Multi-file Shortcut Toolbar */}
-      {files.length > 1 && !isCombinedImages && (
+      {/* Multi-file Shortcut Toolbar (for multiple document files) */}
+      {otherFiles.length > 1 && !hasImages && (
         <div className="bg-[#ecfeff] border border-[#a5f3fc] rounded-xl p-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-[#0e7490] font-medium">
             <Copy className="w-4 h-4 text-[#0e7490] shrink-0" />
-            <span>{files.length} documents uploaded</span>
+            <span>{otherFiles.length} documents uploaded</span>
           </div>
           <button
             type="button"
-            onClick={() => handleApplyToAll(files[0])}
+            onClick={() => handleApplyToAll(otherFiles[0])}
             className="text-[11px] font-bold text-[#0e7490] hover:text-[#0891b2] underline cursor-pointer"
           >
-            Apply File 1 settings to all
-          </button>
-        </div>
-      )}
-
-      {/* Multi-Image Combine Option (When NOT yet active) */}
-      {imageFiles.length > 1 && !isCombinedImages && (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 shadow-2xs flex items-center justify-between">
-          <div className="space-y-0.5">
-            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
-              <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
-              <span>Multi-Image Photo Sheet</span>
-            </div>
-            <p className="text-[11px] text-purple-700">
-              Combine {imageFiles.length} photos into 1 A4 sheet with multiple photos per page
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={toggleCombineImages}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50 shadow-2xs transition-all shrink-0 cursor-pointer"
-          >
-            Fit into 1 Page
+            Apply Document 1 settings to all
           </button>
         </div>
       )}
@@ -552,7 +525,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
       {totalCards > 1 && (
         <div className="flex items-center justify-between px-1 text-xs">
           <span className="font-bold text-slate-600">
-            Document Settings • {totalCards} {totalCards === 1 ? 'file' : 'files'}
+            Document Settings • {totalCards} {totalCards === 1 ? 'section' : 'sections'}
           </span>
           <span className="text-[11px] text-slate-400 font-medium">
             Tap a card to configure
@@ -562,10 +535,10 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
       {/* Per-File / Photo Sheet Settings Cards */}
       <div className="space-y-3">
-        {/* UNIFIED SINGLE CONTROL CARD FOR PHOTO SHEET (when Fit into 1 Page is active) */}
-        {isCombinedImages && (
+        {/* UNIFIED SINGLE CONTROL CARD FOR PHOTO SHEET */}
+        {hasImages && (
           <div className="figma-card overflow-hidden bg-white border border-purple-300 shadow-sm ring-1 ring-purple-400/20">
-            {/* Header: Clickable dropdown toggle in ALL scenarios */}
+            {/* Header: Clickable toggle with single-accordion behavior */}
             <div
               onClick={() => toggleCard('__photo_sheet__')}
               className={`p-3.5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border-b ${
@@ -579,7 +552,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                 <div className="truncate">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
-                      Unified Photo Sheet
+                      Photo Sheet
                     </span>
                     <span
                       className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
@@ -591,9 +564,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
                       {photoSheetOrientation === 'landscape' ? 'Landscape' : 'Portrait'}
                     </span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                      {photoSheetGrid === 1 ? '1 in 1' : `${photoSheetGrid} in 1`}
+                    </span>
                   </div>
                   <h4 className="font-bold text-slate-900 text-xs truncate">
-                    Combined Sheet • {imageFiles.length} Photos
+                    {imageFiles.length === 1 ? 'Photo • 1 Image' : `Combined Sheet • ${imageFiles.length} Photos`}
                   </h4>
                 </div>
               </div>
@@ -616,24 +592,20 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
             {/* Unified Control Body */}
             {isPhotoSheetOpen && (
               <div className="p-3.5 space-y-3.5 bg-white">
-                {/* Header with image count and separate button */}
+                {/* Header info */}
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-slate-800">
-                    Photo Sheet Preview • {imageFiles.length} Photos
+                    {imageFiles.length === 1 ? 'Photo Print Preview' : `Photo Sheet Preview • ${imageFiles.length} Photos`}
                   </label>
-                  <button
-                    type="button"
-                    onClick={toggleCombineImages}
-                    className="text-[10.5px] font-bold text-purple-700 hover:text-purple-900 underline cursor-pointer"
-                  >
-                    Separate into individual files
-                  </button>
+                  <span className="text-[10px] text-purple-700 font-semibold px-2 py-0.5 rounded-full bg-purple-50 border border-purple-200/80">
+                    {photoSheetGrid === 1 ? '1 in 1' : `${photoSheetGrid} in 1`}
+                  </span>
                 </div>
 
                 {/* Mini Photo Sheet Preview */}
                 <MiniPhotoSheetPreview
                   images={imageFiles}
-                  grid={photoSheetGrid as 1 | 2 | 4 | 6 | 9}
+                  grid={photoSheetGrid}
                   orientation={photoSheetOrientation}
                   color={photoSheetColor}
                 />
@@ -657,8 +629,9 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                   <DropdownRow
                     label="Grid Layout"
                     value={photoSheetGrid}
-                    onChange={(val) => updatePhotoSheetSetting({ pagesPerSheet: Number(val) as 2 | 4 | 6 | 9 })}
+                    onChange={(val) => updatePhotoSheetSetting({ pagesPerSheet: Number(val) as 1 | 2 | 4 | 6 | 9 })}
                     options={[
+                      { value: 1, label: '1 in 1' },
                       { value: 2, label: '2 in 1' },
                       { value: 4, label: '4 in 1' },
                       { value: 6, label: '6 in 1' },
@@ -825,13 +798,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     value={item.pagesPerSheet || 1}
                     onChange={(val) => {
                       const gridNum = Number(val) as 1 | 2 | 4 | 6 | 9;
-                      if (isCombinedImages && isImageFile(item)) {
-                        onFilesChange(
-                          files.map((f) => (isImageFile(f) ? { ...f, pagesPerSheet: gridNum } : f))
-                        );
-                      } else {
-                        updateFileSetting(item.id, { pagesPerSheet: gridNum });
-                      }
+                      updateFileSetting(item.id, { pagesPerSheet: gridNum });
                     }}
                     options={[
                       { value: 1, label: '1 Page per Sheet' },
