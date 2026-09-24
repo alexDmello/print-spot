@@ -80,24 +80,207 @@ const DropdownRow: React.FC<{
   );
 };
 
-const getCopyOptions = (current: number): DropdownOption[] => {
-  const base = [
-    ...Array.from({ length: 20 }, (_, i) => i + 1),
-    25,
-    30,
-    40,
-    50,
-    75,
-    100,
-  ];
-  if (!base.includes(current) && current > 0) {
-    base.push(current);
-    base.sort((a, b) => a - b);
-  }
-  return base.map((n) => ({
-    value: n,
-    label: `${n} ${n === 1 ? 'copy' : 'copies'}`,
-  }));
+const StepperRow: React.FC<{
+  label: string;
+  sublabel?: string;
+  value: number;
+  min?: number;
+  max?: number;
+  onChange: (val: number) => void;
+  icon?: React.ReactNode;
+  iconBgClass?: string;
+}> = ({
+  label,
+  sublabel,
+  value,
+  min = 1,
+  max = 100,
+  onChange,
+  icon,
+  iconBgClass = 'bg-slate-100 text-[#0e7490]',
+}) => {
+  return (
+    <div className="flex items-center justify-between py-2 px-3 rounded-xl bg-slate-50/70 border border-slate-200/80 hover:bg-slate-50 hover:border-slate-300 transition-all gap-3">
+      {/* Option Name on Left */}
+      <div className="flex items-center gap-2.5 min-w-0 pr-1">
+        {icon && (
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${iconBgClass}`}>
+            {icon}
+          </div>
+        )}
+        <div className="min-w-0">
+          <span className="text-xs font-bold text-slate-800 block truncate">
+            {label}
+          </span>
+          {sublabel && (
+            <span className="text-[10px] text-slate-500 font-medium block truncate">
+              {sublabel}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Stepper on Right */}
+      <div className="flex items-center bg-white border border-slate-200 hover:border-slate-300 rounded-lg p-0.5 shadow-2xs transition-colors shrink-0">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(min, value - 1))}
+          disabled={value <= min}
+          aria-label="Decrease copies"
+          className="w-7 h-7 rounded-md bg-slate-50 hover:bg-slate-100 active:bg-slate-200 border border-slate-200/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center font-bold text-slate-700 text-sm transition-colors cursor-pointer"
+        >
+          -
+        </button>
+        <span className="w-10 text-center font-bold text-slate-900 text-xs">
+          {value}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(max, value + 1))}
+          disabled={value >= max}
+          aria-label="Increase copies"
+          className="w-7 h-7 rounded-md bg-slate-50 hover:bg-slate-100 active:bg-slate-200 border border-slate-200/80 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center font-bold text-slate-700 text-sm transition-colors cursor-pointer"
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const MiniPhotoSheetPreview: React.FC<{
+  images: UploadedDocument[];
+  grid: 1 | 2 | 4 | 6 | 9;
+  orientation: 'portrait' | 'landscape';
+  color: boolean;
+}> = ({ images, grid, orientation, color }) => {
+  const [sheetIndex, setSheetIndex] = useState(0);
+  const totalSheets = Math.max(1, Math.ceil(images.length / grid));
+
+  useEffect(() => {
+    if (sheetIndex >= totalSheets) {
+      setSheetIndex(0);
+    }
+  }, [totalSheets, sheetIndex]);
+
+  const startIndex = sheetIndex * grid;
+  const currentSheetImages = images.slice(startIndex, startIndex + grid);
+  const totalSlots = grid;
+
+  const getGridClass = () => {
+    if (orientation === 'landscape') {
+      switch (grid) {
+        case 2:
+          return 'grid-cols-2 grid-rows-1';
+        case 4:
+          return 'grid-cols-2 grid-rows-2';
+        case 6:
+          return 'grid-cols-3 grid-rows-2';
+        case 9:
+          return 'grid-cols-3 grid-rows-3';
+        default:
+          return 'grid-cols-1 grid-rows-1';
+      }
+    } else {
+      switch (grid) {
+        case 2:
+          return 'grid-cols-1 grid-rows-2';
+        case 4:
+          return 'grid-cols-2 grid-rows-2';
+        case 6:
+          return 'grid-cols-2 grid-rows-3';
+        case 9:
+          return 'grid-cols-3 grid-rows-3';
+        default:
+          return 'grid-cols-1 grid-rows-1';
+      }
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-b from-purple-50/70 to-slate-100/90 rounded-xl p-3 border border-purple-200/70 flex flex-col items-center justify-center shadow-inner">
+      {/* Pagination Bar (if multi-sheet) */}
+      {totalSheets > 1 && (
+        <div className="w-full flex items-center justify-between text-[11px] font-semibold text-purple-900 mb-2 px-1">
+          <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">
+            Sheet {sheetIndex + 1} of {totalSheets}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setSheetIndex((prev) => Math.max(0, prev - 1))}
+              disabled={sheetIndex === 0}
+              className="w-5 h-5 rounded bg-white border border-purple-200 text-purple-800 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center hover:bg-purple-50 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheetIndex((prev) => Math.min(totalSheets - 1, prev + 1))}
+              disabled={sheetIndex === totalSheets - 1}
+              className="w-5 h-5 rounded bg-white border border-purple-200 text-purple-800 disabled:opacity-30 disabled:pointer-events-none flex items-center justify-center hover:bg-purple-50 text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+            >
+              ›
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Realistic Simulated Paper Sheet */}
+      <div
+        className={`bg-white border border-slate-300/90 rounded-md shadow-md p-1.5 transition-all duration-300 flex items-center justify-center ${
+          orientation === 'landscape'
+            ? 'w-full max-w-[240px] aspect-[297/210]'
+            : 'w-full max-w-[170px] aspect-[210/297]'
+        }`}
+        style={{
+          filter: !color ? 'grayscale(100%) contrast(115%)' : 'none',
+        }}
+      >
+        <div className={`w-full h-full grid gap-1 ${getGridClass()}`}>
+          {Array.from({ length: totalSlots }).map((_, slotIdx) => {
+            const img = currentSheetImages[slotIdx];
+            const globalIdx = startIndex + slotIdx + 1;
+
+            if (img) {
+              return (
+                <div
+                  key={img.id}
+                  className="relative w-full h-full rounded border border-slate-200/80 overflow-hidden bg-slate-100 flex items-center justify-center shadow-2xs"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.fileUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[7px] font-bold px-1 rounded-tl leading-tight">
+                    #{globalIdx}
+                  </span>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={`empty-${slotIdx}`}
+                className="w-full h-full rounded border border-dashed border-slate-200 bg-slate-50/60 flex items-center justify-center"
+              >
+                <span className="text-[7.5px] text-slate-300 font-bold">
+                  Empty
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Caption below sheet */}
+      <div className="mt-2 text-center text-[10px] text-purple-800 font-semibold">
+        A4 {orientation === 'landscape' ? 'Landscape' : 'Portrait'} • {grid} in 1 Layout
+      </div>
+    </div>
+  );
 };
 
 interface PrintSettingsProps {
@@ -132,9 +315,26 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
   const pricePerBw = bwService ? Number(bwService.price) : Number(shop.price_per_bw) || 2;
   const pricePerColor = colorService ? Number(colorService.price) : Number(shop.price_per_color) || 10;
 
-  // Open/Close states for all document cards & photo sheet
-  const [openCardIds, setOpenCardIds] = useState<Record<string, boolean>>({});
-  const [isPhotoSheetOpen, setIsPhotoSheetOpen] = useState<boolean>(true);
+  const isImageFile = (f: UploadedDocument) => {
+    const ext = (f.fileName.split('.').pop() || '').toLowerCase();
+    return (
+      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
+      (f.mimeType?.startsWith('image/') ?? false)
+    );
+  };
+
+  const imageFiles = files.filter(isImageFile);
+  const otherFiles = files.filter((f) => !isImageFile(f));
+  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+
+  // Single active open section (accordion behavior: opening one section closes the previous)
+  const [openCardId, setOpenCardId] = useState<string | null>(
+    isCombinedImages ? '__photo_sheet__' : (files[0]?.id ?? null)
+  );
+
+  const toggleCard = (cardId: string) => {
+    setOpenCardId((current) => (current === cardId ? null : cardId));
+  };
 
   // Auto-switch file color mode if disabled by shopkeeper
   useEffect(() => {
@@ -175,17 +375,18 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     );
   };
 
-  const isImageFile = (f: UploadedDocument) => {
-    const ext = (f.fileName.split('.').pop() || '').toLowerCase();
-    return (
-      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
-      (f.mimeType?.startsWith('image/') ?? false)
-    );
-  };
-
-  const imageFiles = files.filter(isImageFile);
-  const otherFiles = files.filter((f) => !isImageFile(f));
-  const isCombinedImages = imageFiles.length > 1 && imageFiles.some((f) => f.combineImages);
+  // Keep openCardId pointed to a valid section if files change
+  useEffect(() => {
+    if (isCombinedImages) {
+      if (openCardId !== '__photo_sheet__' && !otherFiles.some((f) => f.id === openCardId)) {
+        setOpenCardId('__photo_sheet__');
+      }
+    } else {
+      if (!files.some((f) => f.id === openCardId)) {
+        setOpenCardId(files[0]?.id ?? null);
+      }
+    }
+  }, [files, isCombinedImages, otherFiles, openCardId]);
 
   const toggleCombineImages = () => {
     const nextCombined = !isCombinedImages;
@@ -202,6 +403,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
           : f
       )
     );
+    setOpenCardId(nextCombined ? '__photo_sheet__' : (imageFiles[0]?.id || files[0]?.id));
   };
 
   // Helper to calculate sheets and cost for a single file
@@ -273,38 +475,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   const displayFiles = isCombinedImages ? otherFiles : files;
   const totalCards = displayFiles.length + (isCombinedImages ? 1 : 0);
-
-  const isCardOpen = (cardId: string, index: number): boolean => {
-    if (openCardIds[cardId] !== undefined) {
-      return openCardIds[cardId];
-    }
-    // Default open: first card, or if only 1 card exists
-    return index === 0 || totalCards === 1;
-  };
-
-  const toggleCardOpen = (cardId: string, index: number) => {
-    const current = isCardOpen(cardId, index);
-    setOpenCardIds((prev) => ({
-      ...prev,
-      [cardId]: !current,
-    }));
-  };
-
-  const areAllExpanded =
-    (isCombinedImages ? isPhotoSheetOpen : true) &&
-    displayFiles.every((f, idx) => isCardOpen(f.id, idx));
-
-  const toggleAllCards = () => {
-    const targetState = !areAllExpanded;
-    const updated: Record<string, boolean> = {};
-    displayFiles.forEach((f) => {
-      updated[f.id] = targetState;
-    });
-    setOpenCardIds(updated);
-    if (isCombinedImages) {
-      setIsPhotoSheetOpen(targetState);
-    }
-  };
+  const isPhotoSheetOpen = openCardId === '__photo_sheet__';
 
   const getFileIcon = (fileName: string, mime?: string) => {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -381,15 +552,11 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
       {totalCards > 1 && (
         <div className="flex items-center justify-between px-1 text-xs">
           <span className="font-bold text-slate-600">
-            Document Settings • {totalCards} {totalCards === 1 ? 'card' : 'cards'}
+            Document Settings • {totalCards} {totalCards === 1 ? 'file' : 'files'}
           </span>
-          <button
-            type="button"
-            onClick={toggleAllCards}
-            className="text-[11px] font-bold text-[#0e7490] hover:text-[#0891b2] cursor-pointer"
-          >
-            {areAllExpanded ? 'Collapse All' : 'Expand All'}
-          </button>
+          <span className="text-[11px] text-slate-400 font-medium">
+            Tap a card to configure
+          </span>
         </div>
       )}
 
@@ -400,7 +567,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
           <div className="figma-card overflow-hidden bg-white border border-purple-300 shadow-sm ring-1 ring-purple-400/20">
             {/* Header: Clickable dropdown toggle in ALL scenarios */}
             <div
-              onClick={() => setIsPhotoSheetOpen(!isPhotoSheetOpen)}
+              onClick={() => toggleCard('__photo_sheet__')}
               className={`p-3.5 flex items-center justify-between cursor-pointer bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border-b ${
                 isPhotoSheetOpen ? 'border-purple-100' : 'border-transparent'
               } hover:bg-purple-100/50 transition-colors select-none`}
@@ -448,12 +615,11 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
             {/* Unified Control Body */}
             {isPhotoSheetOpen && (
-              <div className="p-3.5 space-y-4 bg-white">
-              {/* Photo Thumbnail Strip */}
-              <div className="space-y-1.5">
+              <div className="p-3.5 space-y-3.5 bg-white">
+                {/* Header with image count and separate button */}
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-slate-800">
-                    Included Photos • {imageFiles.length}
+                    Photo Sheet Preview • {imageFiles.length} Photos
                   </label>
                   <button
                     type="button"
@@ -463,96 +629,83 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     Separate into individual files
                   </button>
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {imageFiles.map((img, i) => (
-                    <div
-                      key={img.id}
-                      className="w-12 h-12 rounded-lg border border-purple-200 overflow-hidden shrink-0 relative bg-slate-100 flex items-center justify-center shadow-2xs group"
-                      title={img.fileName}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.fileUrl.startsWith('http') ? img.fileUrl : img.fileUrl}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                      <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[8px] font-bold px-1 rounded-tl">
-                        #{i + 1}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Photo Sheet Settings List */}
-              <div className="space-y-2 pt-1">
-                {/* 1. Sheet Orientation Dropdown */}
-                <DropdownRow
-                  label="Orientation"
-                  value={photoSheetOrientation}
-                  onChange={(val) => updatePhotoSheetSetting({ orientation: val as 'portrait' | 'landscape' })}
-                  options={[
-                    { value: 'landscape', label: 'Landscape' },
-                    { value: 'portrait', label: 'Portrait' },
-                  ]}
-                  icon={<FileText className="w-3.5 h-3.5 text-purple-700" />}
-                  iconBgClass="bg-purple-100 text-purple-700"
+                {/* Mini Photo Sheet Preview */}
+                <MiniPhotoSheetPreview
+                  images={imageFiles}
+                  grid={photoSheetGrid as 1 | 2 | 4 | 6 | 9}
+                  orientation={photoSheetOrientation}
+                  color={photoSheetColor}
                 />
 
-                {/* 2. Grid Layout Dropdown */}
-                <DropdownRow
-                  label="Grid Layout"
-                  value={photoSheetGrid}
-                  onChange={(val) => updatePhotoSheetSetting({ pagesPerSheet: Number(val) as 2 | 4 | 6 | 9 })}
-                  options={[
-                    { value: 2, label: '2 in 1' },
-                    { value: 4, label: '4 in 1' },
-                    { value: 6, label: '6 in 1' },
-                    { value: 9, label: '9 in 1' },
-                  ]}
-                  icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
-                  iconBgClass="bg-purple-100 text-purple-700"
-                />
-
-                {/* 3. Print Mode Dropdown */}
-                <DropdownRow
-                  label="Print Mode"
-                  value={photoSheetColor ? 'color' : 'bw'}
-                  onChange={(val) => updatePhotoSheetSetting({ color: val === 'color' })}
-                  options={[
-                    { value: 'color', label: `Full Color • ₹${pricePerColor}/sheet`, disabled: !isColorEnabled },
-                    { value: 'bw', label: `Black & White • ₹${pricePerBw}/sheet`, disabled: !isBwEnabled },
-                  ]}
-                  icon={<Check className="w-3.5 h-3.5 text-purple-700" />}
-                  iconBgClass="bg-purple-100 text-purple-700"
-                />
-
-                {/* 4. Sides Dropdown (when multi-sheet photo layout) */}
-                {photoSheetRawSheets > 1 && (
+                {/* Photo Sheet Settings List */}
+                <div className="space-y-2 pt-1">
+                  {/* 1. Sheet Orientation Dropdown */}
                   <DropdownRow
-                    label="Sides"
-                    value={photoSheetDuplex ? 'duplex' : 'simplex'}
-                    onChange={(val) => updatePhotoSheetSetting({ duplex: val === 'duplex' })}
+                    label="Orientation"
+                    value={photoSheetOrientation}
+                    onChange={(val) => updatePhotoSheetSetting({ orientation: val as 'portrait' | 'landscape' })}
                     options={[
-                      { value: 'simplex', label: 'Single-Sided' },
-                      { value: 'duplex', label: 'Double-Sided' },
+                      { value: 'landscape', label: 'Landscape' },
+                      { value: 'portrait', label: 'Portrait' },
+                    ]}
+                    icon={<FileText className="w-3.5 h-3.5 text-purple-700" />}
+                    iconBgClass="bg-purple-100 text-purple-700"
+                  />
+
+                  {/* 2. Grid Layout Dropdown */}
+                  <DropdownRow
+                    label="Grid Layout"
+                    value={photoSheetGrid}
+                    onChange={(val) => updatePhotoSheetSetting({ pagesPerSheet: Number(val) as 2 | 4 | 6 | 9 })}
+                    options={[
+                      { value: 2, label: '2 in 1' },
+                      { value: 4, label: '4 in 1' },
+                      { value: 6, label: '6 in 1' },
+                      { value: 9, label: '9 in 1' },
                     ]}
                     icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
                     iconBgClass="bg-purple-100 text-purple-700"
                   />
-                )}
 
-                {/* 5. Copies Dropdown */}
-                <DropdownRow
-                  label="Copies"
-                  sublabel={`${photoSheetSheetsPerCopy * photoSheetCopies} ${photoSheetSheetsPerCopy * photoSheetCopies === 1 ? 'sheet' : 'sheets'}`}
-                  value={photoSheetCopies}
-                  onChange={(val) => updatePhotoSheetSetting({ copies: Number(val) })}
-                  options={getCopyOptions(photoSheetCopies)}
-                  icon={<Copy className="w-3.5 h-3.5 text-purple-700" />}
-                  iconBgClass="bg-purple-100 text-purple-700"
-                />
-              </div>
+                  {/* 3. Print Mode Dropdown */}
+                  <DropdownRow
+                    label="Print Mode"
+                    value={photoSheetColor ? 'color' : 'bw'}
+                    onChange={(val) => updatePhotoSheetSetting({ color: val === 'color' })}
+                    options={[
+                      { value: 'color', label: `Full Color • ₹${pricePerColor}/sheet`, disabled: !isColorEnabled },
+                      { value: 'bw', label: `Black & White • ₹${pricePerBw}/sheet`, disabled: !isBwEnabled },
+                    ]}
+                    icon={<Check className="w-3.5 h-3.5 text-purple-700" />}
+                    iconBgClass="bg-purple-100 text-purple-700"
+                  />
+
+                  {/* 4. Sides Dropdown (when multi-sheet photo layout) */}
+                  {photoSheetRawSheets > 1 && (
+                    <DropdownRow
+                      label="Sides"
+                      value={photoSheetDuplex ? 'duplex' : 'simplex'}
+                      onChange={(val) => updatePhotoSheetSetting({ duplex: val === 'duplex' })}
+                      options={[
+                        { value: 'simplex', label: 'Single-Sided' },
+                        { value: 'duplex', label: 'Double-Sided' },
+                      ]}
+                      icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
+                      iconBgClass="bg-purple-100 text-purple-700"
+                    />
+                  )}
+
+                  {/* 5. Copies Stepper */}
+                  <StepperRow
+                    label="Copies"
+                    sublabel={`${photoSheetSheetsPerCopy * photoSheetCopies} ${photoSheetSheetsPerCopy * photoSheetCopies === 1 ? 'sheet' : 'sheets'}`}
+                    value={photoSheetCopies}
+                    onChange={(val) => updatePhotoSheetSetting({ copies: val })}
+                    icon={<Copy className="w-3.5 h-3.5 text-purple-700" />}
+                    iconBgClass="bg-purple-100 text-purple-700"
+                  />
+                </div>
 
               {/* Photo Sheet Cost Calculation Footer */}
               <div className="pt-2 border-t border-purple-100 flex items-center justify-between text-[11px] text-purple-700">
@@ -570,10 +723,10 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         )}
 
         {/* Individual Cards: Either for otherFiles (when combined) or for all files (when not combined) */}
-        {displayFiles.map((item, index) => {
+        {displayFiles.map((item) => {
           const originalIndex = files.findIndex((f) => f.id === item.id);
           const { sheetsPerCopy, rate, total } = calculateFileCost(item);
-          const isExpanded = isCardOpen(item.id, index);
+          const isExpanded = openCardId === item.id;
 
           return (
             <div
@@ -582,9 +735,9 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                 isExpanded ? 'border-[#0e7490] ring-1 ring-[#0e7490]/20' : 'border-slate-200 hover:border-slate-300'
               }`}
             >
-              {/* Card Header (Clickable dropdown toggle in ALL scenarios) */}
+              {/* Card Header (Clickable toggle with single-accordion behavior) */}
               <div
-                onClick={() => toggleCardOpen(item.id, index)}
+                onClick={() => toggleCard(item.id)}
                 className={`p-3.5 flex items-center justify-between cursor-pointer bg-slate-50/70 border-b ${
                   isExpanded ? 'border-slate-200' : 'border-transparent'
                 } hover:bg-slate-100/70 transition-colors select-none`}
@@ -690,13 +843,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
                   />
 
-                  {/* 5. Copies Dropdown */}
-                  <DropdownRow
+                  {/* 5. Copies Stepper */}
+                  <StepperRow
                     label="Copies"
                     sublabel={`${sheetsPerCopy * (item.copies || 1)} ${sheetsPerCopy * (item.copies || 1) === 1 ? 'sheet' : 'sheets'}`}
                     value={item.copies || 1}
-                    onChange={(val) => updateFileSetting(item.id, { copies: Number(val) })}
-                    options={getCopyOptions(item.copies || 1)}
+                    onChange={(val) => updateFileSetting(item.id, { copies: val })}
                     icon={<Copy className="w-3.5 h-3.5 text-[#0e7490]" />}
                   />
 
