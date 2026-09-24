@@ -6,7 +6,6 @@ import { MobileBottomCta } from './MobileBottomCta';
 import {
   Check,
   AlertCircle,
-  Sparkles,
   Layers,
   Copy,
   FileText,
@@ -113,30 +112,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
     totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
   });
 
-  // Custom Enabled Add-on Services (Spiral, Staple, Lamination, etc.)
-  const customServices = services.filter((s) => !s.is_default && s.enabled);
-
-  let addOnsCost = 0;
-  customServices.forEach((srv) => {
-    if (selectedServiceIds.includes(srv.id)) {
-      if (srv.unit === 'page') {
-        addOnsCost += Number(srv.price) * totalPhysicalSheets;
-      } else {
-        addOnsCost += Number(srv.price) * totalCopies;
-      }
-    }
-  });
-
-  const grandTotal = totalPrintCost + addOnsCost;
-
-  const toggleService = (serviceId: string) => {
-    if (!onSelectedServicesChange) return;
-    if (selectedServiceIds.includes(serviceId)) {
-      onSelectedServicesChange(selectedServiceIds.filter((id) => id !== serviceId));
-    } else {
-      onSelectedServicesChange([...selectedServiceIds, serviceId]);
-    }
-  };
+  const grandTotal = totalPrintCost;
 
   const getFileIcon = (fileName: string, mime?: string) => {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -413,58 +389,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         })}
       </div>
 
-      {/* Custom Shop Finishing Add-ons */}
-      {customServices.length > 0 && (
-        <div className="figma-card p-4 space-y-3 bg-white">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#0e7490]" />
-            <h3 className="font-bold text-slate-900 text-xs">
-              Finishing & Add-on Services
-            </h3>
-          </div>
 
-          <div className="space-y-2">
-            {customServices.map((srv) => {
-              const isSelected = selectedServiceIds.includes(srv.id);
-              const price = Number(srv.price);
-              return (
-                <div
-                  key={srv.id}
-                  onClick={() => toggleService(srv.id)}
-                  className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
-                    isSelected
-                      ? 'border-[#0e7490] bg-[#ecfeff]'
-                      : 'border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
-                      <span>{srv.name}</span>
-                      <span className="text-[10px] font-normal text-slate-500">
-                        (₹{price.toFixed(2)}/{srv.unit})
-                      </span>
-                    </div>
-                    {srv.description && (
-                      <p className="text-[10px] text-slate-500 leading-tight">
-                        {srv.description}
-                      </p>
-                    )}
-                  </div>
-                  <div
-                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                      isSelected
-                        ? 'bg-[#0e7490] border-[#0e7490] text-white'
-                        : 'border-slate-300 bg-white'
-                    }`}
-                  >
-                    {isSelected && <Check className="w-3.5 h-3.5" />}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Sticky Bottom CTA */}
       <MobileBottomCta
