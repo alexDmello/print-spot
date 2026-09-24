@@ -19,6 +19,7 @@ interface DocumentPreviewProps {
   totalPrice: number;
   onProceed: () => void;
   onGridChange?: (fileId: string, grid: 1 | 2 | 4 | 6 | 9) => void;
+  onOrientationChange?: (fileId: string, orientation: 'portrait' | 'landscape') => void;
 }
 
 export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
@@ -26,6 +27,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   totalPrice,
   onProceed,
   onGridChange,
+  onOrientationChange,
 }) => {
   const isImageFile = (f: UploadedDocument) => {
     const fileExt = (f.fileName.split('.').pop() || '').toLowerCase();
@@ -82,6 +84,25 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const isWordDoc = !isPreviewingPhotoSheet && ['doc', 'docx'].includes(ext);
   const isCodeOrText = !isPreviewingPhotoSheet && ['txt', 'md', 'json', 'js', 'py', 'ts', 'log', 'html'].includes(ext);
 
+  // For images and combined photo sheet, default orientation is 'landscape'
+  const defaultOrientation: 'portrait' | 'landscape' =
+    activeFile?.orientation || (isImage || isPreviewingPhotoSheet ? 'landscape' : 'portrait');
+
+  const [localOrientation, setLocalOrientation] = useState<'portrait' | 'landscape'>(defaultOrientation);
+
+  useEffect(() => {
+    setLocalOrientation(
+      activeFile?.orientation || (isImage || isPreviewingPhotoSheet ? 'landscape' : 'portrait')
+    );
+  }, [activeFile?.id, activeFile?.orientation, isImage, isPreviewingPhotoSheet]);
+
+  const handleOrientationToggle = (orient: 'portrait' | 'landscape') => {
+    setLocalOrientation(orient);
+    if (onOrientationChange && activeFile) {
+      onOrientationChange(activeFile.id, orient);
+    }
+  };
+
   // Normalize URL to same-origin path to prevent CORS/iframe cross-origin issues
   const getResolvedUrl = (url?: string) => {
     if (!url) return '';
@@ -109,19 +130,34 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   const isPhotoSheetColor = imageFiles.some((f) => f.color !== false);
   const isCurrentItemColor = isPreviewingPhotoSheet ? isPhotoSheetColor : !!activeFile?.color;
 
-  // Proportional grid layouts on portrait A4 paper sheet
-  const getGridClass = (grid: number) => {
-    switch (grid) {
-      case 2:
-        return 'grid-cols-1 grid-rows-2'; // 2 stacked halves on portrait A4
-      case 4:
-        return 'grid-cols-2 grid-rows-2'; // 2x2 quadrants on portrait A4
-      case 6:
-        return 'grid-cols-2 grid-rows-3'; // 2 across, 3 down on portrait A4
-      case 9:
-        return 'grid-cols-3 grid-rows-3'; // 3 across, 3 down on portrait A4
-      default:
-        return 'grid-cols-1 grid-rows-1';
+  // Proportional grid layouts on A4 paper sheet adapting to Portrait vs Landscape
+  const getGridClass = (grid: number, orientation: 'portrait' | 'landscape') => {
+    if (orientation === 'landscape') {
+      switch (grid) {
+        case 2:
+          return 'grid-cols-2 grid-rows-1'; // 2 side-by-side halves on wide A4
+        case 4:
+          return 'grid-cols-2 grid-rows-2'; // 2x2 quadrants
+        case 6:
+          return 'grid-cols-3 grid-rows-2'; // 3 across, 2 down on wide A4
+        case 9:
+          return 'grid-cols-3 grid-rows-3'; // 3 across, 3 down
+        default:
+          return 'grid-cols-1 grid-rows-1';
+      }
+    } else {
+      switch (grid) {
+        case 2:
+          return 'grid-cols-1 grid-rows-2'; // 2 stacked halves on portrait A4
+        case 4:
+          return 'grid-cols-2 grid-rows-2'; // 2x2 quadrants
+        case 6:
+          return 'grid-cols-2 grid-rows-3'; // 2 across, 3 down on portrait A4
+        case 9:
+          return 'grid-cols-3 grid-rows-3'; // 3 across, 3 down
+        default:
+          return 'grid-cols-1 grid-rows-1';
+      }
     }
   };
 
@@ -447,23 +483,58 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
           )}
         </div>
 
-        {/* PHYSICAL A4 PAPER SHEET CONTAINER (210 × 297 mm ISO Ratio) */}
+        {/* PHYSICAL A4 PAPER SHEET CONTAINER (Adapts to Portrait 210x297 mm or Landscape 297x210 mm) */}
         <div className="bg-slate-200/60 p-2.5 sm:p-4 rounded-2xl flex flex-col items-center justify-center border border-slate-200/80 shadow-inner">
-          {/* Header indicator above paper */}
-          <div className="w-full max-w-[340px] sm:max-w-[365px] flex items-center justify-between pb-1 text-[10px] text-slate-500 font-semibold mb-1">
-            <span className="flex items-center gap-1 font-bold text-slate-700">
-              <FileText className="w-3 h-3 text-[#0e7490]" />
-              A4 Sheet (210 × 297 mm)
-            </span>
-            <span className="text-[9px] bg-white px-2 py-0.5 rounded border border-slate-300 font-bold text-slate-600 uppercase">
-              {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
-            </span>
+          {/* Header indicator & Orientation Switcher above paper */}
+          <div className={`w-full ${localOrientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'} flex items-center justify-between pb-1.5 text-[10px] text-slate-500 font-semibold mb-1`}>
+            <div className="flex items-center gap-1.5 font-bold text-slate-700">
+              <FileText className="w-3.5 h-3.5 text-[#0e7490]" />
+              <span>
+                {localOrientation === 'landscape' ? 'A4 Landscape (297 × 210 mm)' : 'A4 Portrait (210 × 297 mm)'}
+              </span>
+              <span className="text-[9px] bg-white px-1.5 py-0.2 rounded border border-slate-300 font-bold text-slate-600 uppercase ml-1">
+                {isCombinedImages ? `${currentGrid}-in-1 Grid` : currentGrid === 1 ? 'Full Page' : `${currentGrid}-in-1 Grid`}
+              </span>
+            </div>
+
+            {/* Quick Orientation Switcher */}
+            <div className="flex items-center gap-0.5 bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => handleOrientationToggle('portrait')}
+                className={`px-2 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer ${
+                  localOrientation === 'portrait'
+                    ? 'bg-[#0e7490] text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Switch to Portrait"
+              >
+                Portrait
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOrientationToggle('landscape')}
+                className={`px-2 py-0.5 rounded text-[9.5px] font-bold transition-all cursor-pointer ${
+                  localOrientation === 'landscape'
+                    ? 'bg-[#0e7490] text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Switch to Landscape (Recommended for photos)"
+              >
+                Landscape
+              </button>
+            </div>
           </div>
 
-          {/* PHYSICAL A4 PAPER: STRICTLY NON-ROUNDED (SHARP 90° CUT), EXACT 210:297 ASPECT RATIO */}
+          {/* PHYSICAL A4 PAPER: STRICTLY NON-ROUNDED (SHARP 90° CUT), EXACT 210:297 OR 297:210 RATIO */}
           <div
-            style={{ aspectRatio: '210 / 297', ...colorFilterStyle }}
-            className="w-full max-w-[340px] sm:max-w-[365px] bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 p-2 sm:p-2.5 transition-all relative flex flex-col justify-between select-none overflow-hidden"
+            style={{
+              aspectRatio: localOrientation === 'landscape' ? '297 / 210' : '210 / 297',
+              ...colorFilterStyle,
+            }}
+            className={`w-full ${
+              localOrientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'
+            } bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 p-2 sm:p-2.5 transition-all relative flex flex-col justify-between select-none overflow-hidden`}
           >
             {/* 1. PDF DOCUMENT RENDERING */}
             {isPdf && (
@@ -504,7 +575,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                   )
                 ) : (
                   /* Multi-Page Grid (2, 4, 6, 9 in 1) using PDF.js inside A4 */
-                  <div className={`grid ${getGridClass(currentGrid)} gap-1.5 w-full h-full`}>
+                  <div className={`grid ${getGridClass(currentGrid, localOrientation)} gap-1.5 w-full h-full`}>
                     {Array.from({ length: currentGrid }).map((_, idx) => (
                       <div
                         key={idx}
@@ -529,21 +600,21 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </div>
             )}
 
-            {/* 2. IMAGE RENDERING */}
+            {/* 2. IMAGE RENDERING (Clean physical print appearance without text overlays) */}
             {isImage && (
               <div className="h-full w-full overflow-hidden flex flex-col">
                 {currentGrid === 1 && !isCombinedImages ? (
-                  <div className="w-full h-full bg-white flex items-center justify-center p-2 overflow-hidden">
+                  <div className="w-full h-full bg-white flex items-center justify-center p-1 overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={resolvedUrl}
-                      alt={fileName}
-                      className="max-h-full max-w-full object-contain rounded-none shadow-2xs"
+                      alt=""
+                      className="max-h-full max-w-full object-contain select-none shadow-none"
                     />
                   </div>
                 ) : (
-                  /* Multi-Image Grid (2, 4, 6, 9 in 1) arranged on portrait A4 sheet */
-                  <div className={`grid ${getGridClass(currentGrid)} gap-1.5 w-full h-full`}>
+                  /* Multi-Image Grid (2, 4, 6, 9 in 1) arranged on A4 sheet */
+                  <div className={`grid ${getGridClass(currentGrid, localOrientation)} gap-1.5 w-full h-full`}>
                     {Array.from({ length: currentGrid }).map((_, idx) => {
                       const itemIndex = isPreviewingPhotoSheet
                         ? (selectedPage - 1) * currentGrid + idx
@@ -562,33 +633,26 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
                         return (
                           <div
                             key={idx}
-                            className="border border-slate-200 bg-white p-1 flex flex-col items-center justify-between overflow-hidden shadow-2xs h-full w-full relative"
+                            className="bg-white flex items-center justify-center p-0.5 overflow-hidden h-full w-full relative"
                           >
-                            <div className="w-full flex items-center justify-between text-[7.5px] font-bold text-slate-500 leading-none px-0.5 pt-0.5">
-                              <span className="truncate max-w-[80%]">{itemIndex + 1}. {currentImg.fileName}</span>
-                              <span className="text-slate-400 font-mono">#{itemIndex + 1}</span>
-                            </div>
-                            <div className="flex-1 min-h-0 w-full flex items-center justify-center p-0.5 overflow-hidden">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={imgUrl}
-                                alt={currentImg.fileName}
-                                className="max-h-full max-w-full object-contain"
-                              />
-                            </div>
-                            <span className="text-[7px] text-slate-400 font-semibold leading-none pb-0.5">Spot {idx + 1}</span>
+                            {/* Clean image display with zero text overlay */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={imgUrl}
+                              alt=""
+                              className="max-h-full max-w-full object-contain select-none"
+                            />
                           </div>
                         );
                       }
 
-                      // Empty Spot - Extra spots remain blank, NEVER repeat previous images
+                      // Empty Spot - Unfilled area on paper, clean with subtle guide
                       return (
                         <div
                           key={idx}
-                          className="border border-dashed border-slate-300 bg-slate-50/50 p-1 flex flex-col items-center justify-center text-center select-none h-full w-full"
+                          className="border border-dashed border-slate-200/90 bg-slate-50/20 p-1 flex items-center justify-center select-none h-full w-full"
                         >
-                          <span className="text-[8.5px] font-bold text-slate-400">Spot {idx + 1}</span>
-                          <span className="text-[7.5px] text-slate-300 italic font-medium mt-0.5">Empty Spot</span>
+                          <span className="text-[7.5px] text-slate-300 font-medium select-none">Blank Area</span>
                         </div>
                       );
                     })}

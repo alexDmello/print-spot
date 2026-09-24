@@ -206,6 +206,7 @@ export default function CustomerApp() {
             color: f.color || false,
             duplex: f.duplex || false,
             pagesPerSheet: f.pagesPerSheet || 1,
+            orientation: f.orientation || (f.mimeType?.startsWith('image/') ? 'landscape' : 'portrait'),
           })),
           selectedServiceIds,
         },
@@ -344,6 +345,15 @@ export default function CustomerApp() {
             onGridChange={(fileId, g) =>
               setFiles((prev) =>
                 prev.map((f) => (f.id === fileId ? { ...f, pagesPerSheet: g } : f))
+              )
+            }
+            onOrientationChange={(fileId, orient) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === fileId || (f.combineImages && prev.find((p) => p.id === fileId)?.combineImages)
+                    ? { ...f, orientation: orient }
+                    : f
+                )
               )
             }
             onProceed={() => setStep(4)}

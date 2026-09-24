@@ -65,6 +65,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const resp = JSON.parse(xhr.responseText);
+            const fileExt = (file.name.split('.').pop() || '').toLowerCase();
+            const isImg = (resp.mimeType || file.type || '').startsWith('image/') ||
+              ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(fileExt);
+
             const doc: UploadedDocument = {
               id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
               fileName: resp.fileName || file.name,
@@ -73,9 +77,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               pageCount: resp.pageCount || 1,
               mimeType: resp.mimeType || file.type,
               copies: 1,
-              color: false,
+              color: isImg ? true : false,
               duplex: false,
               pagesPerSheet: 1,
+              orientation: isImg ? 'landscape' : 'portrait',
             };
             resolve(doc);
           } catch {

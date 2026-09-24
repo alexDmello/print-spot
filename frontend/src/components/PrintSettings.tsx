@@ -165,6 +165,27 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
 
   const grandTotal = totalPrintCost;
 
+  // Photo sheet unified variables
+  const photoSheetCopies = imageFiles[0]?.copies || 1;
+  const photoSheetColor = imageFiles.some((f) => f.color !== false);
+  const photoSheetOrientation: 'portrait' | 'landscape' =
+    imageFiles[0]?.orientation || 'landscape';
+  const photoSheetGrid =
+    imageFiles.find((f) => f.pagesPerSheet && f.pagesPerSheet > 1)?.pagesPerSheet ||
+    imageFiles[0]?.pagesPerSheet ||
+    4;
+  const photoSheetRawSheets = Math.max(1, Math.ceil(imageFiles.length / photoSheetGrid));
+  const photoSheetDuplex = imageFiles[0]?.duplex ?? false;
+  const photoSheetSheetsPerCopy = photoSheetDuplex ? Math.ceil(photoSheetRawSheets / 2) : photoSheetRawSheets;
+  const photoSheetRate = photoSheetColor ? pricePerColor : pricePerBw;
+  const photoSheetTotal = photoSheetSheetsPerCopy * photoSheetCopies * photoSheetRate;
+
+  const updatePhotoSheetSetting = (updates: Partial<UploadedDocument>) => {
+    onFilesChange(
+      files.map((f) => (isImageFile(f) ? { ...f, ...updates } : f))
+    );
+  };
+
   const getFileIcon = (fileName: string, mime?: string) => {
     const ext = (fileName.split('.').pop() || '').toLowerCase();
     if (ext === 'pdf' || mime === 'application/pdf') {
@@ -193,12 +214,12 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
           Print Configuration
         </h1>
         <p className="text-xs text-slate-500">
-          Set copies and options for each file individually (e.g. 1 copy of File 1, multiple copies of File 2).
+          Set copies, orientation, and options for your documents before previewing.
         </p>
       </div>
 
       {/* Multi-file Shortcut Toolbar */}
-      {files.length > 1 && (
+      {files.length > 1 && !isCombinedImages && (
         <div className="bg-[#ecfeff] border border-[#a5f3fc] rounded-xl p-2.5 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-[#0e7490] font-medium">
             <Copy className="w-4 h-4 text-[#0e7490] shrink-0" />
@@ -214,88 +235,282 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
         </div>
       )}
 
-      {/* Multi-Image Combine Option (e.g. 6 or 9 images on 1 sheet) */}
-      {imageFiles.length > 1 && (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 shadow-2xs space-y-2.5">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
-                <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
-                <span>Multi-Image Photo Sheet</span>
-              </div>
-              <p className="text-[11px] text-purple-700">
-                {isCombinedImages
-                  ? `Fitting all ${imageFiles.length} photos onto 1 A4 sheet (${imageFiles[0]?.pagesPerSheet || 4}-in-1 layout)`
-                  : `Combine ${imageFiles.length} images into 1 A4 sheet (e.g. 4, 6 or 9 in 1)`}
-              </p>
+      {/* Multi-Image Combine Option (When NOT yet active) */}
+      {imageFiles.length > 1 && !isCombinedImages && (
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-3 shadow-2xs flex items-center justify-between">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
+              <ImageIcon className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>Multi-Image Photo Sheet</span>
             </div>
-            <button
-              type="button"
-              onClick={toggleCombineImages}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                isCombinedImages
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50'
-              }`}
-            >
-              {isCombinedImages ? 'Fit into 1 Page ✓' : 'Fit into 1 Page'}
-            </button>
+            <p className="text-[11px] text-purple-700">
+              Combine {imageFiles.length} photos into 1 A4 sheet (e.g. 2, 4, 6 or 9-in-1 layout)
+            </p>
           </div>
-
-          {/* Quick Grid Picker directly on the banner when Fit into 1 Page is active */}
-          {isCombinedImages && (
-            <div className="pt-2 border-t border-purple-200/60 space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
-                <span>Select Grid Layout on A4 Sheet:</span>
-                <span className="text-[10px] text-purple-600 font-semibold">
-                  {(() => {
-                    const grid = imageFiles[0]?.pagesPerSheet || 4;
-                    const sheets = Math.max(1, Math.ceil(imageFiles.length / grid));
-                    if (imageFiles.length > grid) {
-                      return `${sheets} A4 sheets (${imageFiles.length} photos)`;
-                    } else if (grid > imageFiles.length) {
-                      return `${grid - imageFiles.length} extra spot(s) blank (1 A4 sheet)`;
-                    }
-                    return '1 A4 Sheet fit';
-                  })()}
-                </span>
-              </div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {([2, 4, 6, 9] as const).map((g) => {
-                  const isSelected = (imageFiles[0]?.pagesPerSheet || 4) === g;
-                  const label = g === 2 ? '2-in-1 (Halves)' : g === 4 ? '4-in-1 (2×2)' : g === 6 ? '6-in-1 (2×3)' : '9-in-1 (3×3)';
-                  return (
-                    <button
-                      key={g}
-                      type="button"
-                      onClick={() => {
-                        onFilesChange(
-                          files.map((f) =>
-                            isImageFile(f) ? { ...f, pagesPerSheet: g } : f
-                          )
-                        );
-                      }}
-                      className={`py-1.5 px-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border text-center ${
-                        isSelected
-                          ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
-                          : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-100/60'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={toggleCombineImages}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-purple-300 text-purple-700 hover:bg-purple-100/50 shadow-2xs transition-all shrink-0 cursor-pointer"
+          >
+            Fit into 1 Page
+          </button>
         </div>
       )}
 
-      {/* Per-File Settings Cards */}
+      {/* Per-File / Photo Sheet Settings Cards */}
       <div className="space-y-3">
-        {files.map((item, index) => {
+        {/* UNIFIED SINGLE CONTROL CARD FOR PHOTO SHEET (when Fit into 1 Page is active) */}
+        {isCombinedImages && (
+          <div className="figma-card overflow-hidden bg-white border border-purple-300 shadow-sm ring-1 ring-purple-400/20">
+            {/* Header */}
+            <div className="p-3.5 flex items-center justify-between bg-gradient-to-r from-purple-50/90 to-indigo-50/70 border-b border-purple-100">
+              <div className="flex items-center gap-2.5 overflow-hidden">
+                <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                  <ImageIcon className="w-4 h-4" />
+                </div>
+                <div className="truncate">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-800">
+                      Unified Photo Sheet
+                    </span>
+                    <span
+                      className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
+                        photoSheetColor ? 'bg-purple-200 text-purple-800' : 'bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {photoSheetColor ? 'Color' : 'B&W'}
+                    </span>
+                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                      {photoSheetOrientation === 'landscape' ? 'Landscape (Default)' : 'Portrait'}
+                    </span>
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-xs truncate">
+                    Combined Sheet ({imageFiles.length} Photos)
+                  </h4>
+                </div>
+              </div>
+
+              <div className="text-right shrink-0">
+                <span className="text-xs font-bold text-purple-950 block">
+                  ₹{photoSheetTotal.toFixed(2)}
+                </span>
+                <span className="text-[10px] text-purple-700 font-medium">
+                  {photoSheetCopies} {photoSheetCopies === 1 ? 'copy' : 'copies'} • {photoSheetSheetsPerCopy} {photoSheetSheetsPerCopy === 1 ? 'A4 sheet' : 'A4 sheets'}
+                </span>
+              </div>
+            </div>
+
+            {/* Unified Control Body */}
+            <div className="p-3.5 space-y-4 bg-white">
+              {/* Photo Thumbnail Strip */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-800">
+                    Included Photos ({imageFiles.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={toggleCombineImages}
+                    className="text-[10.5px] font-bold text-purple-700 hover:text-purple-900 underline cursor-pointer"
+                  >
+                    Separate into individual files
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                  {imageFiles.map((img, i) => (
+                    <div
+                      key={img.id}
+                      className="w-12 h-12 rounded-lg border border-purple-200 overflow-hidden shrink-0 relative bg-slate-100 flex items-center justify-center shadow-2xs group"
+                      title={img.fileName}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.fileUrl.startsWith('http') ? img.fileUrl : img.fileUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute bottom-0 right-0 bg-black/60 text-white text-[8px] font-bold px-1 rounded-tl">
+                        #{i + 1}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 1. Sheet Orientation Option (Landscape Default) */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-800">
+                    Sheet Orientation
+                  </label>
+                  <span className="text-[10px] text-purple-600 font-semibold">
+                    Landscape recommended for multi-photo sheets
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updatePhotoSheetSetting({ orientation: 'landscape' })}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      photoSheetOrientation === 'landscape'
+                        ? 'border-purple-600 bg-purple-50 text-purple-900 shadow-2xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold">🖼️ Landscape (Default)</div>
+                    <div className="text-[10px] text-slate-500 font-normal">Wide A4 (297 × 210 mm)</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updatePhotoSheetSetting({ orientation: 'portrait' })}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      photoSheetOrientation === 'portrait'
+                        ? 'border-purple-600 bg-purple-50 text-purple-900 shadow-2xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold">📄 Portrait</div>
+                    <div className="text-[10px] text-slate-500 font-normal">Tall A4 (210 × 297 mm)</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Grid Layout on A4 */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-800">
+                    Grid Layout on A4 Sheet
+                  </label>
+                  <span className="text-[10px] text-purple-600 font-semibold">
+                    {imageFiles.length > photoSheetGrid
+                      ? `${photoSheetRawSheets} A4 sheets required`
+                      : photoSheetGrid > imageFiles.length
+                      ? `${photoSheetGrid - imageFiles.length} spot(s) blank`
+                      : 'Fits 1 A4 sheet'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-1.5">
+                  {([2, 4, 6, 9] as const).map((g) => {
+                    const isSelected = photoSheetGrid === g;
+                    const label =
+                      photoSheetOrientation === 'landscape'
+                        ? g === 2
+                          ? '2-in-1 (Left/Right)'
+                          : g === 4
+                          ? '4-in-1 (2×2)'
+                          : g === 6
+                          ? '6-in-1 (3×2 Wide)'
+                          : '9-in-1 (3×3)'
+                        : g === 2
+                        ? '2-in-1 (Halves)'
+                        : g === 4
+                        ? '4-in-1 (2×2)'
+                        : g === 6
+                        ? '6-in-1 (2×3 Tall)'
+                        : '9-in-1 (3×3)';
+
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => updatePhotoSheetSetting({ pagesPerSheet: g })}
+                        className={`py-2 px-1 rounded-xl text-center text-xs font-bold transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                            : 'bg-white text-purple-900 border-purple-200 hover:bg-purple-50'
+                        }`}
+                      >
+                        <div className="text-xs">{g}-in-1</div>
+                        <div className="text-[9px] opacity-80 truncate">{label.replace(`${g}-in-1 `, '')}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Copies Selector */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-slate-800">
+                    Copies of Photo Sheet:
+                  </label>
+                  <span className="text-slate-500 text-[11px]">
+                    {photoSheetSheetsPerCopy * photoSheetCopies} total A4 sheets
+                  </span>
+                </div>
+
+                <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1 w-full">
+                  <button
+                    type="button"
+                    onClick={() => updatePhotoSheetSetting({ copies: Math.max(1, photoSheetCopies - 1) })}
+                    className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-base"
+                  >
+                    -
+                  </button>
+                  <span className="flex-1 text-center font-bold text-slate-900 text-base">
+                    {photoSheetCopies}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updatePhotoSheetSetting({ copies: photoSheetCopies + 1 })}
+                    className="w-9 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 shadow-2xs transition-colors cursor-pointer text-base"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Print Mode (Color vs B&W) */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Print Mode
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled={!isBwEnabled}
+                    onClick={() => updatePhotoSheetSetting({ color: false })}
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      !photoSheetColor
+                        ? 'border-[#0e7490] bg-[#ecfeff] text-[#0e7490]'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    } ${!isBwEnabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs">Black & White</div>
+                      <div className="text-[10px] text-slate-500">₹{pricePerBw}/sheet</div>
+                    </div>
+                    {!photoSheetColor && <Check className="w-4 h-4 text-[#0e7490]" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!isColorEnabled}
+                    onClick={() => updatePhotoSheetSetting({ color: true })}
+                    className={`p-2.5 rounded-xl border text-left flex items-center justify-between transition-all ${
+                      photoSheetColor
+                        ? 'border-purple-600 bg-purple-50 text-purple-700'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                    } ${!isColorEnabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div>
+                      <div className="font-bold text-xs">Full Color</div>
+                      <div className="text-[10px] text-slate-500">₹{pricePerColor}/sheet</div>
+                    </div>
+                    {photoSheetColor && <Check className="w-4 h-4 text-purple-600" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Individual Cards: Either for otherFiles (when combined) or for all files (when not combined) */}
+        {(isCombinedImages ? otherFiles : files).map((item) => {
+          const originalIndex = files.findIndex((f) => f.id === item.id);
           const { sheetsPerCopy, rate, total } = calculateFileCost(item);
-          const isExpanded = files.length === 1 || expandedFileId === item.id;
+          const isExpanded = (isCombinedImages ? otherFiles.length === 1 : files.length === 1) || expandedFileId === item.id;
 
           return (
             <div
@@ -321,7 +536,7 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                   <div className="truncate">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[#0e7490]">
-                        File {index + 1}
+                        File {originalIndex + 1}
                       </span>
                       <span
                         className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
@@ -466,6 +681,37 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                         }`}
                       >
                         Double-Sided (Duplex)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Orientation (Portrait vs Landscape) */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-800 block">
+                      Orientation
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateFileSetting(item.id, { orientation: 'portrait' })}
+                        className={`p-2 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                          (item.orientation || (isImageFile(item) ? 'landscape' : 'portrait')) === 'portrait'
+                            ? 'border-[#0e7490] bg-[#ecfeff] text-[#0e7490] shadow-2xs'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        Portrait (Tall)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateFileSetting(item.id, { orientation: 'landscape' })}
+                        className={`p-2 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                          (item.orientation || (isImageFile(item) ? 'landscape' : 'portrait')) === 'landscape'
+                            ? 'border-[#0e7490] bg-[#ecfeff] text-[#0e7490] shadow-2xs'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        Landscape (Wide)
                       </button>
                     </div>
                   </div>

@@ -52,6 +52,7 @@ export interface PrintSettings {
   color: boolean;
   duplex: boolean;
   paperSize: 'A4' | 'A3' | 'Letter';
+  orientation?: 'portrait' | 'landscape';
 }
 
 export interface UploadedDocument {
@@ -67,6 +68,7 @@ export interface UploadedDocument {
   pagesPerSheet: 1 | 2 | 4 | 6 | 9;
   paperSize?: 'A4' | 'A3' | 'Letter';
   combineImages?: boolean;
+  orientation?: 'portrait' | 'landscape';
 }
 
 export interface User {
