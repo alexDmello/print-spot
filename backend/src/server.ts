@@ -34,14 +34,14 @@ app.use(
   })
 );
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/jobs', jobRoutes);
-app.use('/api/queue', queueRoutes);
-app.use('/api/shops', shopRoutes);
-app.use('/api/admin', adminRoutes);
+// API Routes (Mounted both with and without /api prefix for Vercel rewrite compatibility)
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/upload', '/upload'], uploadRoutes);
+app.use(['/api/payments', '/payments'], paymentRoutes);
+app.use(['/api/jobs', '/jobs'], jobRoutes);
+app.use(['/api/queue', '/queue'], queueRoutes);
+app.use(['/api/shops', '/shops'], shopRoutes);
+app.use(['/api/admin', '/admin'], adminRoutes);
 
 // Health check
 app.get(['/health', '/api/health'], (_req, res) => {
@@ -97,5 +97,10 @@ if (!process.env.VERCEL && !process.env.NOW_REGION) {
   startServer();
 }
 
-export { app, httpServer, startServer };
-export default app;
+// Export directly as module.exports function for Vercel Serverless Function compatibility
+(app as any).default = app;
+(app as any).app = app;
+(app as any).httpServer = httpServer;
+(app as any).startServer = startServer;
+
+module.exports = app;
