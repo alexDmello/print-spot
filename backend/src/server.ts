@@ -44,11 +44,12 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/admin', adminRoutes);
 
 // Health check
-app.get('/health', (_req, res) => {
+app.get(['/health', '/api/health'], (_req, res) => {
   res.json({
     status: 'healthy',
     service: 'PrintSpot Backend',
     timestamp: new Date().toISOString(),
+    databaseConfigured: Boolean(config.databaseUrl),
   });
 });
 
@@ -91,8 +92,10 @@ async function startServer(): Promise<void> {
   }
 }
 
-// Start server automatically
-startServer();
+// Only auto-start persistent background listeners in standalone (non-Vercel Serverless) environments
+if (!process.env.VERCEL && !process.env.NOW_REGION) {
+  startServer();
+}
 
 export { app, httpServer, startServer };
 export default app;

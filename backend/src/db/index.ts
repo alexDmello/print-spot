@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
-import { PGlite } from '@electric-sql/pglite';
 import { config } from '../config/env';
 
 export interface DbResult<T = any> {
@@ -10,7 +9,7 @@ export interface DbResult<T = any> {
 }
 
 let pgPool: Pool | null = null;
-let pgliteInstance: PGlite | null = null;
+let pgliteInstance: any = null;
 let dbInitPromise: Promise<void> | null = null;
 
 export async function ensureDb(): Promise<void> {
@@ -39,11 +38,17 @@ export async function initDb(): Promise<void> {
     await pgPool.query('SELECT 1');
     console.log('[DB] Connected to PostgreSQL successfully.');
   } else {
+    if (process.env.VERCEL) {
+      throw new Error(
+        'DATABASE_URL is not configured in Vercel environment variables. Please add your Supabase connection string to Vercel Project Settings (Settings -> Environment Variables -> DATABASE_URL).'
+      );
+    }
     console.log('[DB] No DATABASE_URL specified. Initializing embedded PGlite database...');
     const dbDir = path.resolve(config.uploadDir, 'pglite_data');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
     }
+    const { PGlite } = await import('@electric-sql/pglite');
     pgliteInstance = new PGlite(dbDir);
     await pgliteInstance.waitReady;
     console.log(`[DB] Embedded PGlite database ready at ${dbDir}`);
@@ -59,8 +64,8 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<D
     const res = await pgPool.query(sql, params);
     return { rows: res.rows, rowCount: res.rowCount ?? res.rows.length };
   } else if (pgliteInstance) {
-    const res = await pgliteInstance.query<T>(sql, params);
-    return { rows: res.rows, rowCount: res.rows.length };
+    const res = await pgliteInstance.query(sql, params);
+    return { rows: res.rows as T[], rowCount: res.rows.length };
   } else {
     throw new Error('Database not initialized.');
   }
