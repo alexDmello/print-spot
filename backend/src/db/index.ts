@@ -34,6 +34,9 @@ export async function initDb(): Promise<void> {
     pgPool = new Pool({
       connectionString: config.databaseUrl,
       ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+      connectionTimeoutMillis: 8000,
+      idleTimeoutMillis: 30000,
+      max: process.env.VERCEL ? 3 : 10,
     });
     await pgPool.query('SELECT 1');
     console.log('[DB] Connected to PostgreSQL successfully.');
@@ -52,6 +55,18 @@ export async function initDb(): Promise<void> {
     pgliteInstance = new PGlite(dbDir);
     await pgliteInstance.waitReady;
     console.log(`[DB] Embedded PGlite database ready at ${dbDir}`);
+  }
+
+  // Fast check: If shops with slug and admin_users already exist, avoid running slow DDL on serverless cold starts
+  try {
+    const shopColCheck = await query('SELECT slug FROM shops LIMIT 1');
+    const adminCheck = await query('SELECT id FROM admin_users LIMIT 1');
+    if (shopColCheck && adminCheck && adminCheck.rowCount > 0) {
+      console.log('[DB] Verified database schema and admin users.');
+      return;
+    }
+  } catch (fastCheckErr) {
+    console.log('[DB] Initializing database schema and default seeds...');
   }
 
   await runMigrations();
@@ -239,7 +254,7 @@ async function runMigrations(): Promise<void> {
   }
 }
 
-async function seedDefaults(): Promise<void> {
+export async function seedDefaults(): Promise<void> {
   const shopCheck = await query('SELECT id FROM shops WHERE id = $1', ['shop_main']);
   if (shopCheck.rowCount === 0) {
     console.log('[DB] Seeding default shop and printers...');

@@ -82,19 +82,25 @@ export default function CustomerApp() {
           return;
         }
 
+        // 2. Direct redirect for Shopkeeper Subdomain (shop.mellod.in -> /shop)
+        if (host === 'shop.mellod.in' || host.startsWith('shop.localhost')) {
+          window.location.replace('/shop');
+          return;
+        }
+
         const params = new URLSearchParams(window.location.search);
         let shopIdParam = params.get('shop');
 
-        // 2. Subdomain extraction fallback ({slug}.mellod.in -> counter {slug})
+        // 3. Subdomain extraction fallback ({slug}.mellod.in -> customer counter {slug})
         if (!shopIdParam) {
           if (host.endsWith('.mellod.in')) {
             const sub = host.replace(/\.mellod\.in$/, '');
-            if (!['www', 'admin', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+            if (!['www', 'admin', 'shop', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
               shopIdParam = sub;
             }
           } else if (host.endsWith('.localhost')) {
             const sub = host.replace(/\.localhost$/, '');
-            if (!['admin', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+            if (!['admin', 'shop', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
               shopIdParam = sub;
             }
           }

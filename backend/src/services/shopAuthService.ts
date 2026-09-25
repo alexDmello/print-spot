@@ -28,7 +28,7 @@ export async function loginShop(identifier: string, secret: string): Promise<{ t
   }
 
   // Find shop by ID, owner_phone, or slug
-  const res = await query(
+  let res = await query(
     `SELECT id, name, slug, location, address, owner_name, owner_phone, owner_email, opening_time, closing_time, working_days, upi_id, price_per_bw, price_per_color, pin, password_hash, is_active, is_open
      FROM shops
      WHERE id = $1 OR owner_phone = $2 OR slug = $3`,
@@ -36,7 +36,20 @@ export async function loginShop(identifier: string, secret: string): Promise<{ t
   );
 
   if (res.rowCount === 0) {
-    throw new Error('No shop counter found with this phone number or ID.');
+    // If shop not found and user used default credentials, auto-seed default shop
+    if (['shop_main', 'campus', '9876543210'].includes(cleanId) && cleanSecret === '1234') {
+      const { seedDefaults } = await import('../db');
+      await seedDefaults();
+      res = await query(
+        `SELECT id, name, slug, location, address, owner_name, owner_phone, owner_email, opening_time, closing_time, working_days, upi_id, price_per_bw, price_per_color, pin, password_hash, is_active, is_open
+         FROM shops
+         WHERE id = $1 OR owner_phone = $2 OR slug = $3`,
+        [cleanId, cleanId, cleanId]
+      );
+    }
+    if (res.rowCount === 0) {
+      throw new Error('No shop counter found with this phone number or ID.');
+    }
   }
 
   const shop = res.rows[0];
@@ -82,9 +95,22 @@ export async function loginAdmin(username: string, password: string): Promise<{ 
     throw new Error('Admin username and password are required.');
   }
 
-  const res = await query('SELECT * FROM admin_users WHERE username = $1', [cleanUser]);
+  let res = await query('SELECT * FROM admin_users WHERE username = $1', [cleanUser]);
   if (res.rowCount === 0) {
-    throw new Error('Invalid administrator credentials.');
+    // Auto-seed default super admin if table is empty or admin record is missing
+    if (cleanUser === 'admin' && cleanPass === 'admin123') {
+      const defaultSalt = 'a1b2c3d4e5f60718';
+      const crypto = await import('crypto');
+      const defaultHash = crypto.pbkdf2Sync('admin123', defaultSalt, 1000, 64, 'sha512').toString('hex');
+      await query(
+        `INSERT INTO admin_users (id, username, password_hash, email) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING`,
+        ['admin_root_1', 'admin', `${defaultSalt}:${defaultHash}`, 'admin@printspot.in']
+      );
+      res = await query('SELECT * FROM admin_users WHERE username = $1', [cleanUser]);
+    }
+    if (res.rowCount === 0) {
+      throw new Error('Invalid administrator credentials.');
+    }
   }
 
   const admin = res.rows[0];

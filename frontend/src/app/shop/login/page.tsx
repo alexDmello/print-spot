@@ -111,7 +111,7 @@ export default function ShopLoginPage() {
       localStorage.setItem('printspot_shop_token', data.token);
       localStorage.setItem('printspot_shop_data', JSON.stringify(data.shop));
 
-      router.push('/shop');
+      router.replace('/shop');
     } catch (err: any) {
       setError(err.message || 'Login failed.');
       setIsLoading(false);

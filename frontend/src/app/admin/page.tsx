@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import QRCode from 'qrcode';
 import confetti from 'canvas-confetti';
 import Link from 'next/link';
@@ -45,14 +46,9 @@ import {
 type AdminTab = 'analytics' | 'fleet' | 'onboard';
 
 export default function AdminCommandCenterPage() {
+  const router = useRouter();
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
-
-  // Login form state
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
 
   // Analytics data
   const [analytics, setAnalytics] = useState<any>(null);
@@ -143,15 +139,17 @@ export default function AdminCommandCenterPage() {
     slugCheckTimer.current = setTimeout(() => checkSlugAvailability(clean), 400);
   };
 
-  // Verify Admin Session on mount
+  // Verify Admin Session on mount - redirect to /admin/login if unauthenticated
   useEffect(() => {
     const savedToken = localStorage.getItem('printspot_admin_token');
-    if (savedToken) {
-      setAdminToken(savedToken);
-      fetchAnalytics(savedToken);
-      fetchFleet(savedToken);
+    if (!savedToken) {
+      router.replace('/admin/login');
+      return;
     }
-  }, []);
+    setAdminToken(savedToken);
+    fetchAnalytics(savedToken);
+    fetchFleet(savedToken);
+  }, [router]);
 
   // Listen to socket fleet updates
   useEffect(() => {
@@ -173,45 +171,10 @@ export default function AdminCommandCenterPage() {
     };
   }, []);
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoggingIn(true);
-    setLoginError(null);
-
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: adminUsername.trim(),
-          password: adminPassword.trim(),
-        }),
-      });
-
-      const text = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || `Server error (${res.status})`);
-      }
-
-      if (!res.ok) throw new Error(data.error || 'Authentication failed');
-
-      localStorage.setItem('printspot_admin_token', data.token);
-      setAdminToken(data.token);
-      fetchAnalytics(data.token);
-      fetchFleet(data.token);
-    } catch (err: any) {
-      setLoginError(err.message || 'Invalid administrator credentials');
-    } finally {
-      setIsLoggingIn(false);
-    }
-  };
-
   const handleAdminLogout = () => {
     localStorage.removeItem('printspot_admin_token');
     setAdminToken(null);
+    router.replace('/admin/login');
   };
 
   const fetchAnalytics = async (token: string) => {
@@ -342,105 +305,12 @@ export default function AdminCommandCenterPage() {
     }
   };
 
-  // 1. Render Admin Login screen if not authenticated
+  // 1. Render Loading State while redirecting to /admin/login
   if (!adminToken) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col justify-between antialiased">
-        <header className="bg-white border-b border-slate-200">
-          <div className="max-w-md mx-auto px-4 h-14 flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm font-bold text-sm">
-                <Shield className="w-4 h-4 text-cyan-400" />
-              </div>
-              <div>
-                <span className="text-sm font-extrabold tracking-tight text-slate-900 block leading-tight">
-                  PrintSpot Super Admin
-                </span>
-                <span className="text-[10px] text-slate-500 font-medium leading-none">
-                  Platform Operations
-                </span>
-              </div>
-            </Link>
-          </div>
-        </header>
-
-        <main className="flex-1 flex flex-col items-center justify-center p-4">
-          <div className="w-full max-w-sm">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-slate-900 text-cyan-400 flex items-center justify-center shadow-lg">
-                <Lock className="w-7 h-7" />
-              </div>
-              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                Platform Operator Login
-              </h1>
-              <p className="text-xs text-slate-500 mt-1">
-                Enter your master credentials to access the fleet control and analytics center.
-              </p>
-            </div>
-
-            <div className="figma-card p-6 bg-white border border-slate-200 shadow-md space-y-4">
-              {loginError && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
-                  {loginError}
-                </div>
-              )}
-
-              <form onSubmit={handleAdminLogin} className="space-y-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    Administrator Username
-                  </label>
-                  <input
-                    type="text"
-                    value={adminUsername}
-                    onChange={(e) => setAdminUsername(e.target.value)}
-                    placeholder="e.g. admin"
-                    required
-                    className="w-full figma-input px-3.5 py-2.5 text-xs text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1.5">
-                    Master Password / Passkey
-                  </label>
-                  <input
-                    type="password"
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="Default: admin123"
-                    required
-                    className="w-full figma-input px-3.5 py-2.5 text-xs text-slate-900 font-mono"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isLoggingIn}
-                  className="w-full py-3 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-50 transition-colors"
-                >
-                  {isLoggingIn ? (
-                    <>
-                      <RotateCw className="w-4 h-4 animate-spin" />
-                      <span>Verifying...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Enter Super Admin Center</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <div className="pt-2 text-center">
-                <span className="text-[11px] text-slate-400">
-                  Default: <strong className="text-slate-600">admin</strong> / Password: <strong className="text-slate-600">admin123</strong>
-                </span>
-              </div>
-            </div>
-          </div>
-        </main>
+      <div className="min-h-screen bg-[#0b0f19] flex flex-col items-center justify-center p-6 text-center text-slate-100">
+        <RotateCw className="w-8 h-8 text-sky-400 animate-spin mb-3" />
+        <p className="text-xs text-slate-400 font-medium">Redirecting to Super Admin Login...</p>
       </div>
     );
   }

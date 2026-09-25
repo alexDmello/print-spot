@@ -5,6 +5,11 @@ const nextConfig = {
     unoptimized: true,
   },
   async rewrites() {
+    // In Vercel production, vercel.json routes /api to service "api"
+    // Never rewrite to localhost:5000 on Vercel!
+    if (process.env.VERCEL && !process.env.BACKEND_URL) {
+      return [];
+    }
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000';
     return [
       {
