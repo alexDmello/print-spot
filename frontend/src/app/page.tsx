@@ -74,18 +74,29 @@ export default function CustomerApp() {
       setShops(activeShops);
 
       if (typeof window !== 'undefined') {
+        const host = window.location.hostname.toLowerCase();
+
+        // 1. Direct redirect for Admin Subdomain (admin.mellod.in -> /admin)
+        if (host === 'admin.mellod.in' || host.startsWith('admin.localhost')) {
+          window.location.replace('/admin');
+          return;
+        }
+
         const params = new URLSearchParams(window.location.search);
         let shopIdParam = params.get('shop');
 
-        // Subdomain extraction fallback
+        // 2. Subdomain extraction fallback ({slug}.mellod.in -> counter {slug})
         if (!shopIdParam) {
-          const host = window.location.hostname.toLowerCase();
           if (host.endsWith('.mellod.in')) {
             const sub = host.replace(/\.mellod\.in$/, '');
-            if (!['www', 'admin', 'api'].includes(sub)) shopIdParam = sub;
+            if (!['www', 'admin', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+              shopIdParam = sub;
+            }
           } else if (host.endsWith('.localhost')) {
             const sub = host.replace(/\.localhost$/, '');
-            if (!['admin', 'api'].includes(sub)) shopIdParam = sub;
+            if (!['admin', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+              shopIdParam = sub;
+            }
           }
         }
 
