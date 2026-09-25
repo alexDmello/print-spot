@@ -64,7 +64,11 @@ async function startServer(): Promise<void> {
   try {
     // 1. Initialize Database & Migrations
     await initDb();
+  } catch (err) {
+    console.error('[Startup] Warning: Database connection deferred/failed:', err);
+  }
 
+  try {
     // 2. Initialize 24h File Auto-Delete Cron
     startStorageCleanupWorker();
 
@@ -72,23 +76,23 @@ async function startServer(): Promise<void> {
     initSocketServer(httpServer);
 
     // 4. Start HTTP Server
-    httpServer.listen(config.port, () => {
-      console.log(`===============================================`);
-      console.log(`🚀 PrintSpot Backend running on port ${config.port}`);
-      console.log(`📡 WebSocket & REST API ready`);
-      console.log(`📁 Upload storage directory: ${config.uploadDir}`);
-      console.log(`===============================================`);
-    });
+    if (!httpServer.listening) {
+      const port = parseInt(process.env.PORT || `${config.port || 5000}`, 10);
+      httpServer.listen(port, '0.0.0.0', () => {
+        console.log(`===============================================`);
+        console.log(`🚀 PrintSpot Backend running on port ${port}`);
+        console.log(`📡 WebSocket & REST API ready`);
+        console.log(`📁 Upload storage directory: ${config.uploadDir}`);
+        console.log(`===============================================`);
+      });
+    }
   } catch (err) {
     console.error('Fatal startup error:', err);
-    process.exit(1);
   }
 }
 
-// Auto-start when run directly (not in Vercel Serverless environment)
-if (process.env.VERCEL !== '1' && !process.env.NOW_REGION) {
-  startServer();
-}
+// Start server automatically
+startServer();
 
 export { app, httpServer, startServer };
 export default app;

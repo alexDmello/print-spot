@@ -11,11 +11,31 @@ export interface DbResult<T = any> {
 
 let pgPool: Pool | null = null;
 let pgliteInstance: PGlite | null = null;
+let dbInitPromise: Promise<void> | null = null;
+
+export async function ensureDb(): Promise<void> {
+  if (pgPool || pgliteInstance) return;
+  if (!dbInitPromise) {
+    dbInitPromise = initDb().catch((err) => {
+      console.error('[DB] Failed to initialize database:', err);
+      dbInitPromise = null;
+      throw err;
+    });
+  }
+  return dbInitPromise;
+}
 
 export async function initDb(): Promise<void> {
   if (config.databaseUrl) {
     console.log('[DB] Connecting to PostgreSQL via DATABASE_URL...');
-    pgPool = new Pool({ connectionString: config.databaseUrl });
+    const isRemote = config.databaseUrl.includes('supabase') ||
+                     config.databaseUrl.includes('pooler') ||
+                     !config.databaseUrl.includes('localhost');
+
+    pgPool = new Pool({
+      connectionString: config.databaseUrl,
+      ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+    });
     await pgPool.query('SELECT 1');
     console.log('[DB] Connected to PostgreSQL successfully.');
   } else {
@@ -34,6 +54,7 @@ export async function initDb(): Promise<void> {
 }
 
 export async function query<T = any>(sql: string, params: any[] = []): Promise<DbResult<T>> {
+  await ensureDb();
   if (pgPool) {
     const res = await pgPool.query(sql, params);
     return { rows: res.rows, rowCount: res.rowCount ?? res.rows.length };
@@ -41,17 +62,18 @@ export async function query<T = any>(sql: string, params: any[] = []): Promise<D
     const res = await pgliteInstance.query<T>(sql, params);
     return { rows: res.rows, rowCount: res.rows.length };
   } else {
-    throw new Error('Database not initialized. Call initDb() first.');
+    throw new Error('Database not initialized.');
   }
 }
 
 export async function exec(sql: string): Promise<void> {
+  await ensureDb();
   if (pgPool) {
     await pgPool.query(sql);
   } else if (pgliteInstance) {
     await pgliteInstance.exec(sql);
   } else {
-    throw new Error('Database not initialized. Call initDb() first.');
+    throw new Error('Database not initialized.');
   }
 }
 

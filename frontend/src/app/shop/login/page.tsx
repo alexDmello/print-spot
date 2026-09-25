@@ -95,7 +95,14 @@ export default function ShopLoginPage() {
         }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || `Server error (${res.status})`);
+      }
+
       if (!res.ok) {
         throw new Error(data.error || 'Invalid shop credentials.');
       }
