@@ -101,6 +101,22 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS staple_price NUMERIC NOT NULL DEFAULT 5.00;
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS double_sided_discount NUMERIC NOT NULL DEFAULT 0.00;
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS custom_rates JSONB DEFAULT '{}';
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS password_hash TEXT;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS pin TEXT;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT true;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS platform_fee_percent NUMERIC DEFAULT 5.0;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_slug ON shops(slug);
+
+    CREATE TABLE IF NOT EXISTS admin_users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      email TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
 
     CREATE TABLE IF NOT EXISTS shop_services (
       id TEXT PRIMARY KEY,
@@ -139,6 +155,11 @@ async function runMigrations(): Promise<void> {
       token_number INT,
       token_code TEXT,
       price NUMERIC NOT NULL,
+      payment_provider TEXT DEFAULT 'manual',
+      payment_method TEXT DEFAULT 'upi',
+      payment_status TEXT DEFAULT 'pending',
+      payment_order_id TEXT,
+      payment_transaction_id TEXT,
       razorpay_order_id TEXT,
       razorpay_payment_id TEXT,
       pickup_code TEXT,
@@ -147,6 +168,13 @@ async function runMigrations(): Promise<void> {
       completed_at TIMESTAMP,
       picked_up_at TIMESTAMP
     );
+
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_order_id TEXT;
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_transaction_id TEXT;
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_provider TEXT DEFAULT 'manual';
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'upi';
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending';
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP;
 
     CREATE TABLE IF NOT EXISTS queue_entries (
       job_id TEXT PRIMARY KEY REFERENCES print_jobs(id) ON DELETE CASCADE,
@@ -164,6 +192,24 @@ async function runMigrations(): Promise<void> {
 
   await exec(schemaSql);
   console.log('[DB] Schema and tables verified.');
+
+  // Auto-populate unique subdomain slugs for any shops lacking one
+  try {
+    const emptySlugs = await query('SELECT id, name FROM shops WHERE slug IS NULL');
+    for (const s of emptySlugs.rows) {
+      let baseSlug = s.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
+      if (!baseSlug) baseSlug = s.id.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      let candidateSlug = baseSlug;
+      let counter = 1;
+      while ((await query('SELECT id FROM shops WHERE slug = $1 AND id != $2', [candidateSlug, s.id])).rowCount > 0) {
+        candidateSlug = `${baseSlug}-${counter++}`;
+      }
+      await query('UPDATE shops SET slug = $1 WHERE id = $2', [candidateSlug, s.id]);
+      console.log(`[DB] Auto-assigned custom subdomain slug '${candidateSlug}' to shop "${s.name}" (${s.id})`);
+    }
+  } catch (slugErr) {
+    console.warn('[DB] Warning during slug auto-assignment:', slugErr);
+  }
 }
 
 async function seedDefaults(): Promise<void> {
@@ -171,11 +217,12 @@ async function seedDefaults(): Promise<void> {
   if (shopCheck.rowCount === 0) {
     console.log('[DB] Seeding default shop and printers...');
     await query(
-      `INSERT INTO shops (id, name, location, address, latitude, longitude, owner_name, owner_phone, owner_email, opening_time, closing_time, working_days, upi_id, price_per_bw, price_per_color)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      `INSERT INTO shops (id, name, slug, location, address, latitude, longitude, owner_name, owner_phone, owner_email, opening_time, closing_time, working_days, upi_id, price_per_bw, price_per_color, pin, is_active, is_open)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [
         'shop_main',
         'PrintSpot Campus Hub',
+        'campus',
         'Student Center, Ground Floor (Near Cafeteria)',
         'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007',
         28.6912,
@@ -189,6 +236,9 @@ async function seedDefaults(): Promise<void> {
         'printspot@upi',
         2.00,
         10.00,
+        '1234',
+        true,
+        true,
       ]
     );
 
@@ -203,7 +253,7 @@ async function seedDefaults(): Promise<void> {
       ]
     );
   } else {
-    // Ensure shop_main has default address & coordinates if null
+    // Ensure shop_main has default address, credentials & status if null
     await query(
       `UPDATE shops 
        SET address = COALESCE(address, 'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007'),
@@ -215,8 +265,25 @@ async function seedDefaults(): Promise<void> {
            opening_time = COALESCE(opening_time, '08:00 AM'),
            closing_time = COALESCE(closing_time, '10:00 PM'),
            working_days = COALESCE(working_days, 'Mon - Sat'),
-           upi_id = COALESCE(upi_id, 'printspot@upi')
+           upi_id = COALESCE(upi_id, 'printspot@upi'),
+           pin = COALESCE(pin, '1234'),
+           is_active = COALESCE(is_active, true),
+           is_open = COALESCE(is_open, true)
        WHERE id = 'shop_main'`
+    );
+  }
+
+  // Seed default platform super admin if not exists
+  const adminCheck = await query('SELECT id FROM admin_users WHERE username = $1', ['admin']);
+  if (adminCheck.rowCount === 0) {
+    console.log('[DB] Seeding default platform super admin user...');
+    // PBKDF2 hash for 'admin123'
+    const defaultSalt = 'a1b2c3d4e5f60718';
+    const crypto = await import('crypto');
+    const defaultHash = crypto.pbkdf2Sync('admin123', defaultSalt, 1000, 64, 'sha512').toString('hex');
+    await query(
+      `INSERT INTO admin_users (id, username, password_hash, email) VALUES ($1, $2, $3, $4)`,
+      ['admin_root_1', 'admin', `${defaultSalt}:${defaultHash}`, 'admin@printspot.in']
     );
   }
 

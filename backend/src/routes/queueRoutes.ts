@@ -125,4 +125,87 @@ router.post('/:shopId/retry', async (req: Request, res: Response) => {
   }
 });
 
+// Shopkeeper Action: Mark Pay at Counter as Paid
+router.post('/:shopId/mark-paid', async (req: Request, res: Response) => {
+  try {
+    const { shopId } = req.params;
+    const { jobId } = req.body;
+
+    if (!jobId) {
+      res.status(400).json({ error: 'jobId is required.' });
+      return;
+    }
+
+    await query(
+      `UPDATE print_jobs SET payment_status = 'paid' WHERE id = $1 AND shop_id = $2`,
+      [jobId, shopId]
+    );
+
+    const snapshot = await queueEngine.getQueueSnapshot(shopId);
+    const io = getSocketServer();
+    if (io) {
+      io.to(`shop:${shopId}`).emit('queue_updated', snapshot);
+      io.to(`job:${jobId}`).emit('job_status_update', {
+        jobId,
+        paymentStatus: 'paid',
+        message: 'Payment confirmed at counter by shop manager.',
+      });
+    }
+
+    res.json({ success: true, message: 'Job payment marked as collected.' });
+  } catch (err: any) {
+    console.error('[Queue] Error marking job paid:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Shopkeeper Action: Mark Job as Ready for Pickup
+router.post('/:shopId/ready', async (req: Request, res: Response) => {
+  try {
+    const { shopId } = req.params;
+    const { jobId } = req.body;
+
+    if (!jobId) {
+      res.status(400).json({ error: 'jobId is required.' });
+      return;
+    }
+
+    const jobRes = await query('SELECT * FROM print_jobs WHERE id = $1 AND shop_id = $2', [jobId, shopId]);
+    if (jobRes.rowCount === 0) {
+      res.status(404).json({ error: 'Job not found' });
+      return;
+    }
+
+    const job = jobRes.rows[0];
+
+    await query(
+      `UPDATE print_jobs SET status = 'ready', completed_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [jobId]
+    );
+
+    await queueEngine.dequeueJob(shopId, jobId);
+    const snapshot = await queueEngine.getQueueSnapshot(shopId);
+
+    const io = getSocketServer();
+    if (io) {
+      io.to(`shop:${shopId}`).emit('queue_updated', snapshot);
+      io.to(`job:${jobId}`).emit('job_status_update', {
+        jobId,
+        status: 'ready',
+        pickupCode: job.pickup_code,
+        message: 'Your documents are printed and ready for pickup at the counter!',
+      });
+    }
+
+    // Check if next job can be dispatched
+    await checkAndDispatchNextJob(shopId);
+
+    res.json({ success: true, message: 'Job marked ready for pickup.', pickupCode: job.pickup_code });
+  } catch (err: any) {
+    console.error('[Queue] Error marking job ready:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
+

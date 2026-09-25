@@ -13,6 +13,7 @@ import paymentRoutes from './routes/paymentRoutes';
 import jobRoutes from './routes/jobRoutes';
 import queueRoutes from './routes/queueRoutes';
 import shopRoutes from './routes/shopRoutes';
+import adminRoutes from './routes/adminRoutes';
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -40,6 +41,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/queue', queueRoutes);
 app.use('/api/shops', shopRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/health', (_req, res) => {

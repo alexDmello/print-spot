@@ -69,6 +69,50 @@ export function initSocketServer(httpServer: HttpServer): Server {
       }
     });
 
+    // ==========================================
+    // 🌐 WebRTC Peer-to-Peer (P2P) Direct Signaling
+    // Direct device-to-printer transfer (0 bytes server storage)
+    // ==========================================
+
+    // Customer initiates direct P2P transfer to shop counter
+    socket.on('p2p_offer', (data: { shopId: string; jobId: string; offer: any; metadata: any }) => {
+      console.log(`[P2P Signaling] Customer ${socket.id} offered direct transfer for job ${data.jobId} to shop ${data.shopId}`);
+      socket.to(`shop:${data.shopId}`).emit('p2p_offer_received', {
+        fromSocketId: socket.id,
+        jobId: data.jobId,
+        offer: data.offer,
+        metadata: data.metadata,
+      });
+    });
+
+    // Shop counter responds with P2P answer
+    socket.on('p2p_answer', (data: { targetSocketId: string; jobId: string; answer: any }) => {
+      console.log(`[P2P Signaling] Shop answered P2P offer for job ${data.jobId} -> customer ${data.targetSocketId}`);
+      io?.to(data.targetSocketId).emit('p2p_answer_received', {
+        fromSocketId: socket.id,
+        jobId: data.jobId,
+        answer: data.answer,
+      });
+    });
+
+    // Exchange ICE candidates for NAT traversal
+    socket.on('p2p_ice_candidate', (data: { targetSocketId: string; candidate: any; jobId: string }) => {
+      io?.to(data.targetSocketId).emit('p2p_ice_candidate_received', {
+        fromSocketId: socket.id,
+        candidate: data.candidate,
+        jobId: data.jobId,
+      });
+    });
+
+    // Shop counter acknowledges full reception of file chunks
+    socket.on('p2p_file_ack', (data: { targetSocketId: string; jobId: string; fileName: string; fileSize: number }) => {
+      console.log(`[P2P Signaling] Shop confirmed complete direct reception of ${data.fileName} (${data.fileSize} bytes)`);
+      io?.to(data.targetSocketId).emit('p2p_file_ack_received', {
+        jobId: data.jobId,
+        success: true,
+      });
+    });
+
     // Shop-side Printer Agent connects and registers
     socket.on('agent_register', async (data: { shopId: string; agentKey: string; printers?: any[] }) => {
       if (data.agentKey !== config.printerAgentKey) {

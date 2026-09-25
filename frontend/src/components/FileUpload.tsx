@@ -81,6 +81,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               duplex: false,
               pagesPerSheet: 1,
               orientation: isImg ? 'landscape' : 'portrait',
+              rawFile: file,
             };
             resolve(doc);
           } catch {

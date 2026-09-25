@@ -5,16 +5,20 @@ import util from 'util';
 import { query } from '../db';
 import { queueEngine } from '../redis/queueEngine';
 import { getSocketServer } from '../socket/socketHandler';
+import { loginShop, shopAuthMiddleware } from '../services/shopAuthService';
 
 const execAsync = util.promisify(exec);
 const router = Router();
 
-// Helper to fetch full shop details
-async function getShopWithDetails(shopId: string) {
-  const shopRes = await query('SELECT * FROM shops WHERE id = $1', [shopId]);
+// Helper to fetch full shop details (supports both ID and Subdomain Slug)
+async function getShopWithDetails(idOrSlug: string) {
+  const shopRes = await query('SELECT * FROM shops WHERE id = $1 OR slug = $1', [idOrSlug]);
   if (shopRes.rowCount === 0) return null;
 
-  const shop = shopRes.rows[0];
+  const rawShop = shopRes.rows[0];
+  const shopId = rawShop.id;
+  const { password_hash, pin, ...shop } = rawShop;
+
   const printersRes = await query(
     'SELECT id, shop_id, name, type, status, system_name, created_at FROM printers WHERE shop_id = $1 ORDER BY created_at ASC',
     [shopId]
@@ -33,6 +37,134 @@ async function getShopWithDetails(shopId: string) {
     totalWaiting: snapshot.totalWaiting,
   };
 }
+
+// ==========================================
+// SHOP AUTHENTICATION & SESSION PERSISTENCE
+// ==========================================
+
+// Shopkeeper Login (Phone/ID + PIN/Password)
+router.post('/login', async (req: Request, res: Response) => {
+  try {
+    const { identifier, secret, phone, pin, password } = req.body;
+    const loginId = identifier || phone || '';
+    const loginSecret = secret || pin || password || '';
+
+    const result = await loginShop(loginId, loginSecret);
+    res.json(result);
+  } catch (err: any) {
+    res.status(401).json({ error: err.message || 'Login failed.' });
+  }
+});
+
+// Authenticated Shopkeeper Session Check & Full Dashboard Data
+router.get('/me', shopAuthMiddleware, async (req: any, res: Response) => {
+  try {
+    const shopId = req.shop?.shopId;
+    if (!shopId) {
+      res.status(401).json({ error: 'Shop session not found.' });
+      return;
+    }
+
+    const shopDetails = await getShopWithDetails(shopId);
+    if (!shopDetails) {
+      res.status(404).json({ error: 'Shop not found.' });
+      return;
+    }
+
+    res.json({ shop: shopDetails });
+  } catch (err: any) {
+    console.error('[Shop /me] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Public Counter Verification (for Customer QR Scan)
+router.get('/:id/public', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const shop = await getShopWithDetails(id);
+
+    if (!shop) {
+      res.status(404).json({ error: 'No print counter exists with this QR code.' });
+      return;
+    }
+
+    if (!shop.is_active) {
+      res.status(403).json({
+        error: 'This print counter has been deactivated or suspended.',
+        shopName: shop.name,
+      });
+      return;
+    }
+
+    res.json({
+      shop: {
+        id: shop.id,
+        name: shop.name,
+        slug: shop.slug,
+        location: shop.location,
+        address: shop.address,
+        opening_time: shop.opening_time,
+        closing_time: shop.closing_time,
+        working_days: shop.working_days,
+        upi_id: shop.upi_id,
+        price_per_bw: shop.price_per_bw,
+        price_per_color: shop.price_per_color,
+        is_open: shop.is_open,
+        printers: shop.printers,
+        services: shop.services,
+        nowServingToken: shop.nowServingToken,
+        totalWaiting: shop.totalWaiting,
+      },
+    });
+  } catch (err: any) {
+    console.error('[Shop Public] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Toggle Shop Open / Paused State
+router.put('/:id/toggle-open', shopAuthMiddleware, async (req: any, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { is_open } = req.body;
+
+    // Verify authorized to manage this shop
+    if (req.shop.role !== 'admin' && req.shop.shopId !== id) {
+      res.status(403).json({ error: 'Unauthorized to modify this shop counter.' });
+      return;
+    }
+
+    const currentShop = await query('SELECT is_open FROM shops WHERE id = $1', [id]);
+    if (currentShop.rowCount === 0) {
+      res.status(404).json({ error: 'Shop not found' });
+      return;
+    }
+
+    const newOpenState = is_open !== undefined ? Boolean(is_open) : !currentShop.rows[0].is_open;
+
+    await query('UPDATE shops SET is_open = $1 WHERE id = $2', [newOpenState, id]);
+
+    const updatedShop = await getShopWithDetails(id);
+
+    const io = getSocketServer();
+    if (io) {
+      io.to(`shop:${id}`).emit('shop_open_status_changed', { shopId: id, is_open: newOpenState });
+      io.emit('shop_updated', updatedShop);
+    }
+
+    res.json({
+      success: true,
+      message: `Shop counter is now ${newOpenState ? 'Open for orders' : 'Paused / Closed'}.`,
+      is_open: newOpenState,
+      shop: updatedShop,
+    });
+  } catch (err: any) {
+    console.error('[Shop Toggle Open] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // 1. List all shops
 router.get('/', async (_req: Request, res: Response) => {
@@ -67,114 +199,12 @@ router.get('/', async (_req: Request, res: Response) => {
   }
 });
 
-// 2. Shop Self-Onboarding
-router.post('/onboard', async (req: Request, res: Response) => {
-  try {
-    const {
-      name,
-      location,
-      address,
-      latitude,
-      longitude,
-      owner_name,
-      owner_phone,
-      owner_email,
-      opening_time,
-      closing_time,
-      working_days,
-      upi_id,
-      price_per_bw,
-      price_per_color,
-      printers,
-      services,
-    } = req.body;
-
-    if (!name || !location) {
-      res.status(400).json({ error: 'Shop name and location are required.' });
-      return;
-    }
-
-    // Generate unique shop ID
-    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 16);
-    const shopId = `shop_${slug}_${Math.random().toString(36).substring(2, 7)}`;
-
-    const bwRate = price_per_bw !== undefined ? Number(price_per_bw) : 2.0;
-    const colorRate = price_per_color !== undefined ? Number(price_per_color) : 10.0;
-
-    await query(
-      `INSERT INTO shops (
-        id, name, location, address, latitude, longitude,
-        owner_name, owner_phone, owner_email,
-        opening_time, closing_time, working_days, upi_id,
-        price_per_bw, price_per_color
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [
-        shopId,
-        name,
-        location,
-        address || location,
-        latitude ? Number(latitude) : null,
-        longitude ? Number(longitude) : null,
-        owner_name || 'Shop Manager',
-        owner_phone || '',
-        owner_email || '',
-        opening_time || '08:00 AM',
-        closing_time || '10:00 PM',
-        working_days || 'Mon - Sat',
-        upi_id || `${slug}@upi`,
-        bwRate,
-        colorRate,
-      ]
-    );
-
-    // Initial Services Setup
-    const initialServices = Array.isArray(services) && services.length > 0 ? services : [
-      { name: 'Black & White Printing', desc: 'Standard monochrome document printing', cat: 'print', price: bwRate, unit: 'page', enabled: true, is_default: true },
-      { name: 'Color Printing', desc: 'High-clarity color document printing', cat: 'print', price: colorRate, unit: 'page', enabled: true, is_default: true },
-      { name: 'Spiral Binding', desc: 'Plastic spiral ring binding with transparent sheet covers', cat: 'binding', price: 45.0, unit: 'doc', enabled: true, is_default: false },
-      { name: 'Stapled Binding', desc: 'Corner or side edge metal stapling', cat: 'binding', price: 5.0, unit: 'doc', enabled: true, is_default: false },
-    ];
-
-    for (const s of initialServices) {
-      const srvId = `srv_${uuidv4().substring(0, 8)}`;
-      await query(
-        `INSERT INTO shop_services (id, shop_id, name, description, category, price, unit, enabled, is_default)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [srvId, shopId, s.name, s.desc || s.description || '', s.cat || s.category || 'print', Number(s.price) || 0, s.unit || 'page', s.enabled !== false, s.is_default || false]
-      );
-    }
-
-    // Initial Printers Setup
-    const initialPrinters = Array.isArray(printers) && printers.length > 0 ? printers : [
-      { name: `${name} High-Speed B&W`, type: 'mono', status: 'online', system_name: 'Microsoft Print to PDF' },
-      { name: `${name} Color LaserJet`, type: 'color', status: 'online', system_name: 'Microsoft Print to PDF' },
-    ];
-
-    for (const p of initialPrinters) {
-      const printerId = `printer_${uuidv4().substring(0, 8)}`;
-      await query(
-        `INSERT INTO printers (id, shop_id, name, type, status, system_name)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [printerId, shopId, p.name, p.type || 'mono', p.status || 'online', p.system_name || 'Microsoft Print to PDF']
-      );
-    }
-
-    const createdShop = await getShopWithDetails(shopId);
-
-    const io = getSocketServer();
-    if (io) {
-      io.emit('shop_created', createdShop);
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Shop successfully onboarded!',
-      shop: createdShop,
-    });
-  } catch (err: any) {
-    console.error('[Shops] Error during shop onboarding:', err);
-    res.status(500).json({ error: err.message });
-  }
+// 2. Public Shop Self-Onboarding Disabled
+// Shop onboarding is restricted exclusively to the Platform Super Admin (/api/admin/shops)
+router.post('/onboard', (_req: Request, res: Response) => {
+  res.status(403).json({
+    error: 'Public shop self-onboarding is disabled. All print counters must be onboarded through the Super Admin Portal (/admin).',
+  });
 });
 
 // 3. Single shop info

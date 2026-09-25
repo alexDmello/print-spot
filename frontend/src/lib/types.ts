@@ -24,6 +24,7 @@ export interface ShopService {
 export interface Shop {
   id: string;
   name: string;
+  slug?: string;
   location: string;
   address?: string;
   latitude?: number | string;
@@ -45,6 +46,8 @@ export interface Shop {
   services?: ShopService[];
   nowServingToken?: string | null;
   totalWaiting?: number;
+  is_active?: boolean;
+  is_open?: boolean;
 }
 
 export interface PrintSettings {
@@ -69,6 +72,7 @@ export interface UploadedDocument {
   paperSize?: 'A4' | 'A3' | 'Letter';
   combineImages?: boolean;
   orientation?: 'portrait' | 'landscape';
+  rawFile?: File;
 }
 
 export interface User {
@@ -86,20 +90,29 @@ export interface PrintJob {
   file_name: string;
   file_size: number;
   page_count: number;
-  settings: PrintSettings;
+  settings: any;
   status: 'created' | 'payment_pending' | 'waiting' | 'printing' | 'ready' | 'picked_up' | 'failed' | 'cancelled';
   token_number?: number;
   token_code?: string;
   price: number;
+  payment_provider?: string;
+  payment_order_id?: string;
+  payment_transaction_id?: string;
   razorpay_order_id?: string;
   razorpay_payment_id?: string;
+  payment_method?: 'upi' | 'card' | 'counter_cash' | 'counter_upi' | string;
+  payment_status?: 'pending' | 'paid' | 'pay_at_counter' | string;
   pickup_code?: string;
   error_message?: string;
   created_at: string;
   completed_at?: string;
   picked_up_at?: string;
+  printed_at?: string;
   user_name?: string;
   user_phone?: string;
+  localBlobUrl?: string;
+  isP2P?: boolean;
+  p2pProgress?: number;
 }
 
 export interface QueueSnapshot {

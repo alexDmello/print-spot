@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { createPaymentOrder, confirmJobPayment, verifyWebhookSignature } from '../services/paymentService';
+import { createPaymentOrder, confirmJobPayment, confirmPayAtCounter, verifyWebhookSignature } from '../services/paymentService';
 import { config } from '../config/env';
 
 const router = Router();
@@ -67,6 +67,24 @@ router.post('/verify-simulated', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Payment] Error in simulated payment:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Pay at Counter (Cash or Counter UPI) option
+router.post('/pay-at-counter', async (req: Request, res: Response) => {
+  try {
+    const { jobId, counterPaymentType } = req.body;
+    if (!jobId) {
+      res.status(400).json({ error: 'jobId is required.' });
+      return;
+    }
+
+    const type = counterPaymentType === 'counter_upi' ? 'counter_upi' : 'counter_cash';
+    const result = await confirmPayAtCounter(jobId, type);
+    res.json({ success: true, isCounterPayment: true, ...result });
+  } catch (err: any) {
+    console.error('[Payment] Error in Pay at Counter:', err);
+    res.status(500).json({ error: err.message || 'Failed to place order.' });
   }
 });
 

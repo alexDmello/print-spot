@@ -14,8 +14,11 @@ import {
   RotateCw,
   Lock,
   ArrowRight,
-  FileText,
+  Store,
+  Zap,
 } from 'lucide-react';
+import { getSocket } from '@/lib/socket';
+import { sendP2PFile } from '@/lib/p2pTransfer';
 
 interface CheckoutModalProps {
   files: UploadedDocument[];
@@ -53,11 +56,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [promoApplied, setPromoApplied] = useState(true);
 
   // Payment method
-  const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'netbanking'>('upi');
+  const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'counter_cash'>('upi');
   const [showUpiQrSheet, setShowUpiQrSheet] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'scan' | 'verifying' | 'success'>('scan');
   const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Direct P2P transfer state
+  const [p2pTransferring, setP2pTransferring] = useState<boolean>(false);
+  const [p2pPercent, setP2pPercent] = useState<number>(0);
+  const [p2pStatusText, setP2pStatusText] = useState<string | null>(null);
 
   // Calculations across all files
   const pricePerBw = Number(shop.price_per_bw) || 2;
@@ -200,6 +208,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         activeJobId = await createJob();
       }
 
+      // Initiate Direct WebRTC P2P Transfer from Phone directly to Shop PC
+      const rawFileToStream = files.find((f) => f.rawFile)?.rawFile;
+      if (rawFileToStream) {
+        setP2pTransferring(true);
+        setP2pStatusText('Connecting directly to shop counter...');
+        const socket = getSocket();
+        sendP2PFile(
+          socket,
+          shop.id,
+          activeJobId,
+          rawFileToStream,
+          (percent) => {
+            setP2pPercent(percent);
+            setP2pStatusText(`Streaming to printer: ${percent}% (0 KB cloud storage)...`);
+          }
+        ).then((ok) => {
+          if (ok) {
+            setP2pStatusText('✓ Direct transfer verified (0 KB cloud bytes)');
+          } else {
+            setP2pStatusText('Using secure cloud link');
+          }
+        });
+      }
+
+      if (paymentMethod === 'counter_cash') {
+        const counterRes = await fetch('/api/payments/pay-at-counter', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: activeJobId,
+            counterPaymentType: 'counter_cash',
+          }),
+        });
+
+        const counterData = await counterRes.json();
+        if (!counterRes.ok) throw new Error(counterData.error || 'Failed to place order.');
+        onPaymentSuccess(counterData);
+        return;
+      }
+
       const orderRes = await fetch('/api/payments/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -263,6 +311,43 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           Complete payment to receive your FIFO queue token and start printing.
         </p>
       </div>
+
+      {/* P2P Direct Transfer Info Banner */}
+      <div className="p-3 bg-teal-50 border border-teal-200 rounded-2xl flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Zap className="w-4 h-4 fill-white" />
+          </div>
+          <div>
+            <span className="font-bold text-teal-950 block">Direct Peer-to-Peer Transfer</span>
+            <span className="text-[10px] text-teal-700">
+              Streams directly from your phone to shop PC (0 KB cloud storage)
+            </span>
+          </div>
+        </div>
+        <span className="text-[10px] font-bold text-teal-800 bg-white px-2 py-0.5 rounded-full border border-teal-200">
+          ⚡ 0 Cloud Cost
+        </span>
+      </div>
+
+      {/* P2P Live Streaming Progress Bar */}
+      {p2pTransferring && (
+        <div className="p-3 bg-teal-50 border border-teal-300 rounded-2xl space-y-1.5 animate-in fade-in">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-teal-900 flex items-center gap-1.5">
+              <RotateCw className="w-3.5 h-3.5 animate-spin text-teal-600" />
+              <span>{p2pStatusText || 'Streaming directly to printer...'}</span>
+            </span>
+            <span className="font-mono font-bold text-teal-700">{p2pPercent}%</span>
+          </div>
+          <div className="w-full h-2 bg-teal-200/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-teal-600 transition-all duration-150"
+              style={{ width: `${p2pPercent}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 1. Itemized Order Summary Card */}
       <div className="figma-card p-4 space-y-3 bg-white border border-slate-200 shadow-2xs">
@@ -525,6 +610,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             </div>
             {paymentMethod === 'card' && <CheckCircle2 className="w-4 h-4 text-[#0e7490]" />}
+          </div>
+
+          {/* Pay at Counter (Cash / Store UPI) */}
+          <div
+            onClick={() => setPaymentMethod('counter_cash')}
+            className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+              paymentMethod === 'counter_cash'
+                ? 'border-[#0e7490] bg-[#ecfeff]'
+                : 'border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-[#0e7490] shadow-2xs">
+                <Store className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-900 block">Pay at Counter (Cash / UPI)</span>
+                <span className="text-[10px] text-slate-500">Pay directly to the shopkeeper upon pickup</span>
+              </div>
+            </div>
+            {paymentMethod === 'counter_cash' && <CheckCircle2 className="w-4 h-4 text-[#0e7490]" />}
           </div>
         </div>
 

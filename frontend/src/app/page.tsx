@@ -9,9 +9,10 @@ import { CheckoutModal } from '@/components/CheckoutModal';
 import { TokenConfirmation } from '@/components/TokenConfirmation';
 import { LiveQueueTracker } from '@/components/LiveQueueTracker';
 import { PickupReady } from '@/components/PickupReady';
+import { ScanQrLanding } from '@/components/ScanQrLanding';
 import { Shop, UploadedDocument, User } from '@/lib/types';
 import { getSocket } from '@/lib/socket';
-import { RotateCw, QrCode, Sparkles, MapPin, Clock, ArrowRight, Layers, Search } from 'lucide-react';
+import { RotateCw, QrCode, Sparkles, MapPin, Clock, ArrowRight, Layers, Search, AlertTriangle, AlertCircle } from 'lucide-react';
 
 export default function CustomerApp() {
   const [step, setStep] = useState<number>(1);
@@ -19,6 +20,7 @@ export default function CustomerApp() {
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
   const [isLoadingShop, setIsLoadingShop] = useState<boolean>(true);
   const [isQrScanned, setIsQrScanned] = useState<boolean>(false);
+  const [scanErrorMessage, setScanErrorMessage] = useState<string | null>(null);
 
   // Uploaded files list with per-file settings
   const [files, setFiles] = useState<UploadedDocument[]>([]);
@@ -40,7 +42,7 @@ export default function CustomerApp() {
     fetchShops();
   }, []);
 
-  // Listen to live shop pricing updates over Socket.IO
+  // Listen to live shop pricing & counter open/close updates over Socket.IO
   useEffect(() => {
     const socket = getSocket();
     const handleUpdate = (updatedShop: Shop) => {
@@ -48,41 +50,109 @@ export default function CustomerApp() {
       setShops((prev) => prev.map((s) => (s.id === updatedShop.id ? { ...s, ...updatedShop } : s)));
     };
 
+    const handleOpenStatus = ({ shopId, is_open }: { shopId: string; is_open: boolean }) => {
+      setSelectedShop((prev) => (prev && prev.id === shopId ? { ...prev, is_open } : prev));
+      setShops((prev) => prev.map((s) => (s.id === shopId ? { ...s, is_open } : s)));
+    };
+
     socket.on('shop_pricing_updated', handleUpdate);
     socket.on('shop_updated', handleUpdate);
+    socket.on('shop_open_status_changed', handleOpenStatus);
 
     return () => {
       socket.off('shop_pricing_updated', handleUpdate);
       socket.off('shop_updated', handleUpdate);
+      socket.off('shop_open_status_changed', handleOpenStatus);
     };
   }, []);
 
   const fetchShops = async () => {
     try {
       const res = await fetch('/api/shops');
-      const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        setShops(data);
+      const allShops = await res.json();
+      const activeShops = Array.isArray(allShops) ? allShops.filter((s: Shop) => s.is_active !== false) : [];
+      setShops(activeShops);
 
-        // Check if scanned via shop QR code (?shop=<shopId>)
-        if (typeof window !== 'undefined') {
-          const params = new URLSearchParams(window.location.search);
-          const shopIdParam = params.get('shop');
-          if (shopIdParam) {
-            const matched = data.find((s: Shop) => s.id === shopIdParam);
-            if (matched) {
-              setSelectedShop(matched);
-              setIsQrScanned(true);
-              setStep(1); // Stay on merged Step 1 (Counter & Upload)!
-              return;
-            }
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        let shopIdParam = params.get('shop');
+
+        // Subdomain extraction fallback
+        if (!shopIdParam) {
+          const host = window.location.hostname.toLowerCase();
+          if (host.endsWith('.mellod.in')) {
+            const sub = host.replace(/\.mellod\.in$/, '');
+            if (!['www', 'admin', 'api'].includes(sub)) shopIdParam = sub;
+          } else if (host.endsWith('.localhost')) {
+            const sub = host.replace(/\.localhost$/, '');
+            if (!['admin', 'api'].includes(sub)) shopIdParam = sub;
           }
         }
 
-        setSelectedShop(data[0]);
+        if (shopIdParam) {
+          // Fetch verified public counter details
+          try {
+            const publicRes = await fetch(`/api/shops/${encodeURIComponent(shopIdParam)}/public`);
+            const publicData = await publicRes.json();
+
+            if (publicRes.ok && publicData.shop) {
+              const matchedShop = publicData.shop;
+              setSelectedShop(matchedShop);
+              setIsQrScanned(true);
+
+              // Check if customer has an existing active order session to restore
+              const savedOrderRaw = localStorage.getItem(`printspot_active_order_${matchedShop.id}`);
+              if (savedOrderRaw) {
+                try {
+                  const saved = JSON.parse(savedOrderRaw);
+                  if (saved.jobId) {
+                    const jobCheckRes = await fetch(`/api/jobs/${saved.jobId}`);
+                    if (jobCheckRes.ok) {
+                      const jobData = await jobCheckRes.json();
+                      const status = jobData.job?.status;
+                      if (status === 'waiting' || status === 'printing') {
+                        setJobId(saved.jobId);
+                        setTokenCode(saved.tokenCode || jobData.job.token_code);
+                        setTokenNumber(saved.tokenNumber || jobData.job.token_number);
+                        setQueuePosition(jobData.position || saved.queuePosition || 1);
+                        setPickupCode(saved.pickupCode || jobData.job.pickup_code);
+                        setEstimatedWait(jobData.estimatedWaitMinutes || saved.estimatedWait || 5);
+                        setStep(6); // Restore directly to Live Queue Tracker!
+                        return;
+                      } else if (status === 'ready') {
+                        setJobId(saved.jobId);
+                        setTokenCode(saved.tokenCode || jobData.job.token_code);
+                        setPickupCode(saved.pickupCode || jobData.job.pickup_code);
+                        setStep(7); // Restore to Pickup Ready!
+                        return;
+                      } else {
+                        // Job completed, picked up or cancelled -> clear
+                        localStorage.removeItem(`printspot_active_order_${matchedShop.id}`);
+                      }
+                    }
+                  }
+                } catch (sessionErr) {
+                  console.warn('Failed to restore active order:', sessionErr);
+                }
+              }
+
+              setStep(1);
+              return;
+            } else {
+              setScanErrorMessage(publicData.error || 'The scanned QR code is invalid or inactive.');
+              setSelectedShop(null);
+            }
+          } catch (shopErr) {
+            setScanErrorMessage('Failed to connect to the scanned print counter.');
+            setSelectedShop(null);
+          }
+        } else {
+          // No QR scanned: enforce scan-only landing screen!
+          setSelectedShop(null);
+        }
       }
     } catch (err) {
-      console.error('Failed to load shop:', err);
+      console.error('Failed to load shops:', err);
     } finally {
       setIsLoadingShop(false);
     }
@@ -222,6 +292,9 @@ export default function CustomerApp() {
   };
 
   const handleResetFlow = () => {
+    if (selectedShop && typeof window !== 'undefined') {
+      localStorage.removeItem(`printspot_active_order_${selectedShop.id}`);
+    }
     setStep(1);
     setFiles([]);
     setSelectedServiceIds([]);
@@ -286,12 +359,25 @@ export default function CustomerApp() {
     };
   }, [step]);
 
-  if (isLoadingShop || !selectedShop) {
+  if (isLoadingShop) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 text-center">
         <RotateCw className="w-8 h-8 text-[#0e7490] animate-spin mb-3" />
         <p className="text-xs text-slate-500 font-medium">Connecting to PrintSpot Kiosk...</p>
       </div>
+    );
+  }
+
+  // Scan-Only Enforcement: If no valid counter QR was scanned, show the Scan QR Landing Portal!
+  if (!selectedShop) {
+    return (
+      <ScanQrLanding
+        shops={shops}
+        onSelectShop={(s) => {
+          window.location.href = `/?shop=${encodeURIComponent(s.id)}`;
+        }}
+        errorMessage={scanErrorMessage}
+      />
     );
   }
 
@@ -309,6 +395,17 @@ export default function CustomerApp() {
         {/* STEP 1: UNIFIED SHOP DETAILS & DIRECT DOCUMENT UPLOAD */}
         {step === 1 && (
           <div className="space-y-4">
+            {/* Paused Counter Warning */}
+            {selectedShop.is_open === false && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5 text-xs shadow-2xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Counter Temporarily Paused</span>
+                  <span>This print counter is temporarily paused and not accepting new jobs. Please check back shortly or speak to the shopkeeper.</span>
+                </div>
+              </div>
+            )}
+
             {/* Verified Counter Identity Card */}
             <div className="figma-card p-3.5 bg-gradient-to-r from-[#ecfeff] to-cyan-50/40 border border-[#a5f3fc]">
               <div className="flex items-start justify-between gap-2 mb-2">
@@ -317,10 +414,16 @@ export default function CustomerApp() {
                     <span className="text-[10px] font-bold text-white bg-[#0e7490] px-2 py-0.5 rounded-full uppercase tracking-wider">
                       Verified Counter
                     </span>
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Hardware Online
-                    </span>
+                    {selectedShop.is_open !== false ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Counter Open
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-full">
+                        Counter Paused
+                      </span>
+                    )}
                   </div>
                   <h2 className="text-sm font-bold text-slate-900 mt-1">
                     {selectedShop.name}
@@ -431,6 +534,22 @@ export default function CustomerApp() {
               setPickupCode(data.pickupCode || '8402');
               setEstimatedWait(data.estimatedWaitMinutes || 8);
               setStep(5);
+
+              // Cache active order in localStorage for instant restore on refresh
+              if (typeof window !== 'undefined' && selectedShop) {
+                localStorage.setItem(
+                  `printspot_active_order_${selectedShop.id}`,
+                  JSON.stringify({
+                    jobId: data.jobId || jobId,
+                    tokenCode: data.tokenCode,
+                    tokenNumber: data.tokenNumber,
+                    queuePosition: data.position,
+                    pickupCode: data.pickupCode,
+                    estimatedWait: data.estimatedWaitMinutes,
+                    step: 5,
+                  })
+                );
+              }
             }}
             onBack={() => setStep(3)}
           />
