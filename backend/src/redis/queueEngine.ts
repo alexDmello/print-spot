@@ -18,15 +18,21 @@ class QueueEngine {
   private inMemoryQueues: Map<string, string[]> = new Map(); // shopId -> [jobId]
 
   constructor() {
-    if (config.redisUrl) {
-      console.log('[Queue] Connecting to Redis via REDIS_URL...');
-      this.redis = new Redis(config.redisUrl, {
-        retryStrategy: (times) => Math.min(times * 100, 3000),
-      });
-      this.redis.on('connect', () => console.log('[Queue] Redis connected successfully.'));
-      this.redis.on('error', (err) => console.warn('[Queue] Redis warning/error, falling back to memory queue:', err.message));
-    } else {
-      console.log('[Queue] No REDIS_URL provided. Operating in embedded atomic in-memory queue mode.');
+    try {
+      if (config.redisUrl) {
+        console.log('[Queue] Connecting to Redis via REDIS_URL...');
+        this.redis = new Redis(config.redisUrl, {
+          retryStrategy: (times) => Math.min(times * 100, 3000),
+          lazyConnect: true,
+        });
+        this.redis.on('connect', () => console.log('[Queue] Redis connected successfully.'));
+        this.redis.on('error', (err) => console.warn('[Queue] Redis warning/error, falling back to memory queue:', err.message));
+      } else {
+        console.log('[Queue] No REDIS_URL provided. Operating in embedded atomic in-memory queue mode.');
+      }
+    } catch (err) {
+      console.warn('[Queue] Failed to initialize Redis client, using in-memory fallback:', err);
+      this.redis = null;
     }
   }
 

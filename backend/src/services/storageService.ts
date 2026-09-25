@@ -7,9 +7,13 @@ import cron from 'node-cron';
 import { config } from '../config/env';
 import { query } from '../db';
 
-// Ensure upload directory exists
-if (!fs.existsSync(config.uploadDir)) {
-  fs.mkdirSync(config.uploadDir, { recursive: true });
+// Ensure upload directory exists (wrapped in try/catch to avoid module-level crashes on serverless)
+try {
+  if (!fs.existsSync(config.uploadDir)) {
+    fs.mkdirSync(config.uploadDir, { recursive: true });
+  }
+} catch (err) {
+  console.warn('[Storage] Could not create upload directory:', config.uploadDir, err);
 }
 
 // Multer Storage Configuration

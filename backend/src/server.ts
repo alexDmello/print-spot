@@ -97,11 +97,7 @@ if (!process.env.VERCEL && !process.env.NOW_REGION) {
   startServer();
 }
 
-// Export directly as both default export and module.exports function for Vercel Serverless Function compatibility
+// Export directly as module.exports for Vercel Serverless Function compatibility
+// Vercel's Express framework builder expects: module.exports = expressApp
 (app as any).default = app;
-(app as any).app = app;
-(app as any).httpServer = httpServer;
-(app as any).startServer = startServer;
-
 (module as any).exports = app;
-export default app;
