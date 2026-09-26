@@ -186,12 +186,6 @@ async function runMigrations(): Promise<void> {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    CREATE TABLE IF NOT EXISTS platform_settings (
-      key TEXT PRIMARY KEY,
-      value JSONB NOT NULL,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
     CREATE TABLE IF NOT EXISTS print_jobs (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id),
@@ -355,26 +349,5 @@ export async function seedDefaults(): Promise<void> {
       );
     }
   }
-
-  // Seed default platform routing settings if not exists
-  try {
-    const routingCheck = await query('SELECT key FROM platform_settings WHERE key = $1', ['routing']);
-    if (routingCheck.rowCount === 0) {
-      console.log('[DB] Seeding default platform routing configuration...');
-      const defaultRouting = {
-        scheme: 'path',
-        baseUrl: '',
-        domain: 'mellod.in',
-        description: 'Universal Path routing (/counter/:slug) works reliably across all mobile devices, local Wi-Fi networks, and public domains.',
-      };
-      await query(
-        `INSERT INTO platform_settings (key, value) VALUES ($1, $2)`,
-        ['routing', JSON.stringify(defaultRouting)]
-      );
-    }
-  } catch (routingErr) {
-    console.warn('[DB] Warning during platform_settings seed:', routingErr);
-  }
-
   console.log('[DB] Seed data populated successfully.');
 }

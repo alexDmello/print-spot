@@ -774,4 +774,6 @@ export function CustomerAppView({ forcedShopSlugOrId }: { forcedShopSlugOrId?: s
   );
 }
 
-export default CustomerAppView;
+export default function CustomerPage() {
+  return <CustomerAppView />;
+}

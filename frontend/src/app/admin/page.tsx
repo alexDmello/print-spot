@@ -43,21 +43,9 @@ import {
   ArrowLeft,
   Menu,
   ChevronRight,
-  Globe,
-  Link2,
-  Info,
 } from 'lucide-react';
-import {
-  buildCustomerUrl,
-  buildShopkeeperUrl,
-  buildAdminUrl,
-  cleanRootOrigin,
-  RoutingScheme,
-  PlatformRoutingConfig,
-  DEFAULT_ROUTING_CONFIG,
-} from '@/lib/routing';
 
-type AdminTab = 'analytics' | 'fleet' | 'onboard' | 'routing';
+type AdminTab = 'analytics' | 'fleet' | 'onboard';
 
 export default function AdminCommandCenterPage() {
   const router = useRouter();
@@ -73,13 +61,6 @@ export default function AdminCommandCenterPage() {
   const [shops, setShops] = useState<any[]>([]);
   const [isLoadingFleet, setIsLoadingFleet] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Platform Routing Settings
-  const [routingConfig, setRoutingConfig] = useState<PlatformRoutingConfig>(DEFAULT_ROUTING_CONFIG);
-  const [isSavingRouting, setIsSavingRouting] = useState(false);
-  const [routingSaveSuccess, setRoutingSaveSuccess] = useState(false);
-  const [selectedQrTargetUrl, setSelectedQrTargetUrl] = useState<string>('');
-  const [selectedQrScheme, setSelectedQrScheme] = useState<RoutingScheme>('path');
 
   // Selected shop for Standee QR Modal
   const [selectedQrShop, setSelectedQrShop] = useState<any | null>(null);
@@ -171,7 +152,6 @@ export default function AdminCommandCenterPage() {
     setAdminToken(savedToken);
     fetchAnalytics(savedToken);
     fetchFleet(savedToken);
-    fetchRoutingConfig();
   }, [router]);
 
   // Listen to socket fleet updates
@@ -279,57 +259,14 @@ export default function AdminCommandCenterPage() {
     }
   };
 
-  const fetchRoutingConfig = async () => {
-    try {
-      const res = await fetch('/api/admin/settings/routing');
-      if (res.ok) {
-        const data = await res.json();
-        setRoutingConfig({
-          scheme: data.scheme || 'path',
-          baseUrl: data.baseUrl || '',
-          domain: data.domain || 'mellod.in',
-        });
-        setSelectedQrScheme(data.scheme || 'path');
-      }
-    } catch (err) {
-      console.warn('Failed to load routing config:', err);
-    }
-  };
-
-  const handleSaveRoutingConfig = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!adminToken) return;
-    setIsSavingRouting(true);
-    setRoutingSaveSuccess(false);
-    try {
-      const res = await fetch('/api/admin/settings/routing', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminToken}`,
-        },
-        body: JSON.stringify(routingConfig),
-      });
-      if (res.ok) {
-        setRoutingSaveSuccess(true);
-        setTimeout(() => setRoutingSaveSuccess(false), 3000);
-      } else {
-        alert('Failed to save routing configuration.');
-      }
-    } catch (err) {
-      alert('Error updating routing settings.');
-    } finally {
-      setIsSavingRouting(false);
-    }
-  };
-
-  const openQrModal = async (shop: any, schemeOverride?: RoutingScheme) => {
+  const openQrModal = async (shop: any) => {
     setSelectedQrShop(shop);
-    const scheme = schemeOverride || routingConfig.scheme;
-    setSelectedQrScheme(scheme);
     try {
-      const targetUrl = buildCustomerUrl(shop, scheme, routingConfig.baseUrl, routingConfig.domain);
-      setSelectedQrTargetUrl(targetUrl);
+      const isLocal = typeof window !== 'undefined' && window.location.hostname.includes('localhost');
+      const targetUrl = shop.slug
+        ? (isLocal ? `http://${shop.slug}.localhost:3000` : `https://${shop.slug}.mellod.in`)
+        : `${window.location.origin}/?shop=${shop.id}`;
+
       const url = await QRCode.toDataURL(targetUrl, {
         width: 480,
         margin: 2,
@@ -494,28 +431,6 @@ export default function AdminCommandCenterPage() {
                 + New
               </span>
             </button>
-
-            <button
-              onClick={() => {
-                setActiveTab('routing');
-                setSidebarOpen(false);
-              }}
-              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                activeTab === 'routing'
-                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <Globe className={`w-4 h-4 ${activeTab === 'routing' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
-                <span>URL & QR Routing</span>
-              </div>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                activeTab === 'routing' ? 'bg-[#cffafe] text-[#0e7490]' : 'bg-slate-100 text-slate-500'
-              }`}>
-                Config
-              </span>
-            </button>
           </div>
 
           {/* Quick Access Portals */}
@@ -588,8 +503,6 @@ export default function AdminCommandCenterPage() {
                   ? 'Platform Analytics & Intelligence'
                   : activeTab === 'fleet'
                   ? 'Counter Fleet Directory'
-                  : activeTab === 'routing'
-                  ? 'URL Architecture & Routing Directory'
                   : 'Onboard New Shop Counter'}
               </h1>
             </div>
@@ -1183,492 +1096,13 @@ export default function AdminCommandCenterPage() {
             )}
           </div>
         )}
-
-        {/* ========================================================================= */}
-        {/* 4. TAB: URL ARCHITECTURE & ROUTING CONTROL */}
-        {/* ========================================================================= */}
-        {activeTab === 'routing' && (
-          <div className="space-y-6">
-            {/* Context & Hero Banner */}
-            <div className="figma-card p-6 bg-gradient-to-r from-white via-cyan-50/20 to-slate-50 border border-slate-200">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#ecfeff] border border-[#a5f3fc] text-[#0e7490] text-[10px] font-bold">
-                    <Globe className="w-3.5 h-3.5" />
-                    <span>Deterministic URL &amp; Portal Architecture</span>
-                  </div>
-                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
-                    URL Definitions &amp; QR Routing Directory
-                  </h2>
-                  <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
-                    Strict definitions of which URL leads to which portal. QR codes are configured to direct customers exclusively to their counter&apos;s file upload and live queue screen, with zero possibility of landing on the shopkeeper dashboard or login page.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 self-start md:self-auto">
-                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Guaranteed Customer Isolation
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Straight Definition Matrix (3 Roles) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Role 1: Customer Order Gateway */}
-              <div className="figma-card p-5 bg-white border border-slate-200 hover:border-[#0e7490] transition-colors relative flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#0e7490] bg-[#ecfeff] border border-[#a5f3fc] px-2.5 py-0.5 rounded-full uppercase">
-                      Client-Side Gateway
-                    </span>
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                      Zero Auth Required
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                      <span>🛒 Customer Order Station</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      For walk-in customers and students. Uploads documents, selects B&amp;W/Color, configures binding/paper, calculates price, pays, and receives queue token code.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Canonical URL Patterns
-                    </span>
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 space-y-1">
-                      <div className="text-emerald-700 font-semibold truncate">/counter/:slug</div>
-                      <div className="text-slate-600 truncate">/?shop=:slug</div>
-                      <div className="text-cyan-700 truncate">https://:slug.mellod.in</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-emerald-700 font-medium flex items-center gap-1.5">
-                  <Check className="w-3.5 h-3.5 shrink-0" />
-                  <span>Never redirects to /shop or prompts for PIN</span>
-                </div>
-              </div>
-
-              {/* Role 2: Shopkeeper Counter Station */}
-              <div className="figma-card p-5 bg-white border border-slate-200 relative flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full uppercase">
-                      Counter Station
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
-                      Phone + PIN Protected
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                      <span>🏬 Shopkeeper Counter Station</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      For shopkeeper &amp; operators. Manages open/closed toggle, recognizes connected local printers, dispatches print jobs, updates catalog rates, and audits revenue.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Canonical URL Patterns
-                    </span>
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 space-y-1">
-                      <div className="text-amber-800 font-semibold truncate">/shop (Dashboard)</div>
-                      <div className="text-slate-600 truncate">/shop/login (Auth)</div>
-                      <div className="text-cyan-700 truncate">https://shop.mellod.in</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                  <span>Unauthenticated visitors redirect to /shop/login</span>
-                </div>
-              </div>
-
-              {/* Role 3: Platform Super Admin */}
-              <div className="figma-card p-5 bg-white border border-slate-200 relative flex flex-col justify-between">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full uppercase">
-                      Platform Control
-                    </span>
-                    <span className="text-[10px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
-                      Admin Credentials
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
-                      <span>🛡️ Platform Super Admin</span>
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                      Master command center for network telemetry, fleet overview, counter onboarding, custom subdomain assignment, platform routing settings, and credentials reset.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5 pt-2 border-t border-slate-100">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Canonical URL Patterns
-                    </span>
-                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 font-mono text-[11px] text-slate-800 space-y-1">
-                      <div className="text-purple-800 font-semibold truncate">/admin (Master View)</div>
-                      <div className="text-slate-600 truncate">/admin/login (Auth)</div>
-                      <div className="text-cyan-700 truncate">https://admin.mellod.in</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 shrink-0 text-purple-600" />
-                  <span>Requires master administrator session token</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Global QR Code & Routing Configuration Card */}
-            <div className="figma-card p-6 bg-white border border-slate-200 space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-[#0e7490]" />
-                    <span>Global QR Code &amp; Routing Scheme Options</span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Configure how customer QR code standees and copyable counter links are constructed across all dashboards.
-                  </p>
-                </div>
-                {routingSaveSuccess && (
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-xl flex items-center gap-1.5 animate-fadeIn">
-                    <Check className="w-3.5 h-3.5" />
-                    Saved Successfully!
-                  </span>
-                )}
-              </div>
-
-              <form onSubmit={handleSaveRoutingConfig} className="space-y-5">
-                {/* Scheme Choice */}
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-2">
-                    Default Customer Standee Target Format:
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div
-                      onClick={() => setRoutingConfig((p) => ({ ...p, scheme: 'path' }))}
-                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
-                        routingConfig.scheme === 'path'
-                          ? 'border-[#0e7490] bg-[#ecfeff]/50 shadow-2xs'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-bold text-slate-900">Universal Path</span>
-                          <span className="text-[10px] font-bold text-white bg-[#0e7490] px-1.5 py-0.2 rounded">
-                            Recommended
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug font-mono">
-                          {'{origin}'}/counter/{'{slug}'}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-2 leading-tight">
-                          Works on all mobile phones, local Wi-Fi, and public domains without DNS setup.
-                        </p>
-                      </div>
-                      <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-[#0e7490]">
-                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                          routingConfig.scheme === 'path' ? 'border-[#0e7490] bg-[#0e7490] text-white' : 'border-slate-300'
-                        }`}>
-                          {routingConfig.scheme === 'path' && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <span>Active Format</span>
-                      </div>
-                    </div>
-
-                    <div
-                      onClick={() => setRoutingConfig((p) => ({ ...p, scheme: 'subdomain' }))}
-                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
-                        routingConfig.scheme === 'subdomain'
-                          ? 'border-[#0e7490] bg-[#ecfeff]/50 shadow-2xs'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-bold text-slate-900">Branded Subdomain</span>
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
-                            DNS Wildcard
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug font-mono">
-                          https://{'{slug}'}.mellod.in
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-2 leading-tight">
-                          Requires wildcard (*.mellod.in) DNS A-record pointed to production.
-                        </p>
-                      </div>
-                      <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-[#0e7490]">
-                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                          routingConfig.scheme === 'subdomain' ? 'border-[#0e7490] bg-[#0e7490] text-white' : 'border-slate-300'
-                        }`}>
-                          {routingConfig.scheme === 'subdomain' && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <span>Active Format</span>
-                      </div>
-                    </div>
-
-                    <div
-                      onClick={() => setRoutingConfig((p) => ({ ...p, scheme: 'query' }))}
-                      className={`p-3.5 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
-                        routingConfig.scheme === 'query'
-                          ? 'border-[#0e7490] bg-[#ecfeff]/50 shadow-2xs'
-                          : 'border-slate-200 hover:border-slate-300 bg-white'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs font-bold text-slate-900">Root Query Param</span>
-                          <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded">
-                            Standard
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 leading-snug font-mono">
-                          {'{origin}'}/?shop={'{slug}'}
-                        </p>
-                        <p className="text-[10px] text-slate-400 mt-2 leading-tight">
-                          Direct query parameter on the root homepage customer client.
-                        </p>
-                      </div>
-                      <div className="mt-3 flex items-center gap-1.5 text-[11px] font-semibold text-[#0e7490]">
-                        <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                          routingConfig.scheme === 'query' ? 'border-[#0e7490] bg-[#0e7490] text-white' : 'border-slate-300'
-                        }`}>
-                          {routingConfig.scheme === 'query' && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <span>Active Format</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Base Host / Custom Network IP */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Public Host Origin Override (Optional)
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={routingConfig.baseUrl}
-                        onChange={(e) => setRoutingConfig({ ...routingConfig, baseUrl: e.target.value })}
-                        placeholder="e.g. http://192.168.1.15:3000 or leave empty for auto-detect"
-                        className="flex-1 figma-input px-3 py-2 text-xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const autoHost = cleanRootOrigin();
-                          setRoutingConfig((p) => ({ ...p, baseUrl: autoHost }));
-                        }}
-                        className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-[11px] font-bold text-slate-700 hover:bg-slate-100 whitespace-nowrap cursor-pointer"
-                        title="Auto-detect origin from your current browser URL"
-                      >
-                        Auto Detect Host
-                      </button>
-                    </div>
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Tip: If scanning QR codes with mobile phones on local Wi-Fi, enter your local PC IP (e.g. <code>http://192.168.x.x:3000</code>).
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 block mb-1">
-                      Production Root Domain
-                    </label>
-                    <input
-                      type="text"
-                      value={routingConfig.domain}
-                      onChange={(e) => setRoutingConfig({ ...routingConfig, domain: e.target.value })}
-                      placeholder="mellod.in"
-                      className="w-full figma-input px-3 py-2 text-xs"
-                    />
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Used when generating branded subdomain links (e.g. <code>campus.mellod.in</code>).
-                    </span>
-                  </div>
-                </div>
-
-                {/* Save Button */}
-                <div className="flex items-center justify-between pt-4 border-t border-slate-100">
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Info className="w-3.5 h-3.5 text-[#0e7490]" />
-                    <span>Changes take effect immediately across all QR codes and generated posters.</span>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isSavingRouting}
-                    className="figma-btn-primary px-5 py-2.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
-                  >
-                    {isSavingRouting ? (
-                      <>
-                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Saving Configuration...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Save Routing Settings</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            {/* Live Counter Routing Directory & Link Tester */}
-            <div className="figma-card bg-white border border-slate-200 overflow-hidden shadow-2xs">
-              <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Store className="w-4 h-4 text-[#0e7490]" />
-                    <span>Live Counter Routing Directory ({shops.length})</span>
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Verify and test exact destination URLs for every onboarded counter in your fleet.
-                  </p>
-                </div>
-
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter counters..."
-                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl bg-white border border-slate-200 focus:outline-none focus:border-[#0e7490]"
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="p-3.5 pl-4">Counter Details</th>
-                      <th className="p-3.5">Customer Client URL (Direct Gateway)</th>
-                      <th className="p-3.5">Shopkeeper URL</th>
-                      <th className="p-3.5 text-right pr-4">Standee QR</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {shops
-                      .filter((s) => {
-                        const q = searchQuery.toLowerCase();
-                        return (
-                          s.name.toLowerCase().includes(q) ||
-                          s.location.toLowerCase().includes(q) ||
-                          (s.slug && s.slug.toLowerCase().includes(q))
-                        );
-                      })
-                      .map((s) => {
-                        const custUrl = buildCustomerUrl(s, routingConfig.scheme, routingConfig.baseUrl, routingConfig.domain);
-                        const shopUrl = buildShopkeeperUrl(routingConfig.baseUrl);
-
-                        return (
-                          <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="p-3.5 pl-4">
-                              <span className="font-bold text-slate-900 block">{s.name}</span>
-                              <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                                <MapPin className="w-3 h-3 text-[#0e7490] shrink-0" />
-                                <span className="truncate max-w-[200px]">{s.location}</span>
-                              </div>
-                              <span className="text-[10px] font-mono text-cyan-800 bg-[#ecfeff] px-1.5 py-0.2 rounded inline-block mt-1">
-                                slug: {s.slug || 'none'}
-                              </span>
-                            </td>
-
-                            <td className="p-3.5">
-                              <div className="flex items-center gap-2 max-w-sm">
-                                <code className="bg-slate-100 px-2 py-1 rounded text-[11px] font-mono text-emerald-800 truncate block flex-1 border border-slate-200">
-                                  {custUrl}
-                                </code>
-                                <button
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(custUrl);
-                                    alert(`Copied Customer URL: ${custUrl}`);
-                                  }}
-                                  className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 shrink-0 cursor-pointer"
-                                  title="Copy Customer Link"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                                <a
-                                  href={custUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 shrink-0 flex items-center gap-1 text-[10px] font-bold cursor-pointer"
-                                  title="Test Customer Gateway in New Tab"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                  <span>Test</span>
-                                </a>
-                              </div>
-                              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                                Guaranteed to open Document Upload (never login)
-                              </span>
-                            </td>
-
-                            <td className="p-3.5">
-                              <div className="flex items-center gap-2">
-                                <code className="bg-slate-100 px-2 py-1 rounded text-[11px] font-mono text-amber-800 border border-slate-200">
-                                  {shopUrl}
-                                </code>
-                                <a
-                                  href={shopUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 text-[10px] font-bold flex items-center gap-1"
-                                >
-                                  <ExternalLink className="w-3 h-3" />
-                                  <span>Open</span>
-                                </a>
-                              </div>
-                            </td>
-
-                            <td className="p-3.5 text-right pr-4">
-                              <button
-                                onClick={() => openQrModal(s)}
-                                className="px-3 py-1.5 rounded-xl bg-[#ecfeff] text-[#0e7490] hover:bg-cyan-100 border border-[#a5f3fc] transition-colors text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                              >
-                                <QrCode className="w-3.5 h-3.5" />
-                                <span>View QR</span>
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
         </main>
       </div>
 
       {/* Standee QR Preview Modal */}
       {selectedQrShop && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-md w-full text-center space-y-4 shadow-2xl relative">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl relative">
             <button
               onClick={() => setSelectedQrShop(null)}
               className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-400"
@@ -1678,7 +1112,7 @@ export default function AdminCommandCenterPage() {
 
             <div>
               <span className="text-[10px] font-bold text-white bg-[#0e7490] px-2.5 py-0.5 rounded-full uppercase">
-                Official Standee QR
+                Official Standee
               </span>
               <h3 className="text-base font-extrabold text-slate-900 mt-2">
                 {selectedQrShop.name}
@@ -1686,72 +1120,38 @@ export default function AdminCommandCenterPage() {
               <p className="text-xs text-slate-500">{selectedQrShop.location}</p>
             </div>
 
-            {/* Scheme Selector inside Modal */}
-            <div className="flex justify-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-              {(['path', 'subdomain', 'query'] as RoutingScheme[]).map((scheme) => (
-                <button
-                  key={scheme}
-                  onClick={() => openQrModal(selectedQrShop, scheme)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                    selectedQrScheme === scheme
-                      ? 'bg-white text-[#0e7490] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  {scheme === 'path' ? 'Universal Path' : scheme === 'subdomain' ? 'Subdomain' : 'Query Param'}
-                </button>
-              ))}
-            </div>
-
-            {/* QR Image */}
             {qrCodeDataUrl && (
-              <div className="p-4 bg-white rounded-2xl border-2 border-slate-200 inline-block shadow-md">
+              <div className="p-3 bg-white rounded-2xl border-2 border-slate-200 inline-block shadow-md">
                 <img src={qrCodeDataUrl} alt="QR" className="w-48 h-48 mx-auto" />
-                <span className="text-[10px] font-mono font-bold text-sky-700 block mt-2 break-all max-w-[280px]">
-                  {selectedQrTargetUrl || (selectedQrShop.slug ? `${selectedQrShop.slug}.mellod.in` : `ID: ${selectedQrShop.id}`)}
+                <span className="text-[10px] font-mono font-bold text-sky-700 block mt-1">
+                  {selectedQrShop.slug ? `${selectedQrShop.slug}.mellod.in` : `ID: ${selectedQrShop.id}`}
                 </span>
               </div>
             )}
 
-            {/* Verified Reassurance Note */}
-            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium flex items-center justify-center gap-1.5">
-              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>Directs customers straight to Document Upload &amp; Live Queue</span>
-            </div>
-
-            {/* Actions */}
             <div className="flex gap-2">
               <a
                 href={qrCodeDataUrl}
                 download={`PrintSpot_${selectedQrShop.slug || selectedQrShop.id}_Standee.png`}
-                className="flex-1 figma-btn-primary py-2 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 figma-btn-primary py-2 text-xs font-bold flex items-center justify-center gap-1.5"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Download Standee</span>
               </a>
-
-              <a
-                href={selectedQrTargetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3.5 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 flex items-center gap-1.5"
-                title="Test this QR destination directly in a new browser tab"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Test Link</span>
-              </a>
-
               <button
                 onClick={() => {
-                  navigator.clipboard.writeText(selectedQrTargetUrl);
+                  const isLocal = window.location.hostname.includes('localhost') || window.location.hostname.includes('127.0.0.1');
+                  const cleanUrl = selectedQrShop.slug
+                    ? (isLocal ? `http://${selectedQrShop.slug}.localhost:3000` : `https://${selectedQrShop.slug}.mellod.in`)
+                    : `${window.location.origin}/?shop=${selectedQrShop.id}`;
+                  navigator.clipboard.writeText(cleanUrl);
                   setCopiedLink(true);
                   setTimeout(() => setCopiedLink(false), 2000);
                 }}
-                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold hover:bg-slate-100 cursor-pointer flex items-center gap-1"
-                title="Copy Destination Link"
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold hover:bg-slate-100"
+                title="Copy Subdomain Link"
               >
                 {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedLink ? 'Copied' : 'Copy'}</span>
               </button>
             </div>
           </div>

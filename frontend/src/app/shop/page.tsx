@@ -7,7 +7,6 @@ import Link from 'next/link';
 import { getSocket } from '@/lib/socket';
 import { Shop, Printer as IPrinter, PrintJob, QueueSnapshot, ShopService, LocalPrinterConfig } from '@/lib/types';
 import { initP2PReceiver } from '@/lib/p2pTransfer';
-import { buildCustomerUrl, RoutingScheme, cleanRootOrigin } from '@/lib/routing';
 import {
   Activity,
   Printer,
@@ -139,8 +138,6 @@ export default function ShopDashboardPage() {
 
   // Standee QR Code
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
-  const [qrTargetUrl, setQrTargetUrl] = useState<string>('');
-  const [qrScheme, setQrScheme] = useState<RoutingScheme>('path');
   const [copiedLink, setCopiedLink] = useState(false);
 
   // UI state
@@ -396,26 +393,12 @@ export default function ShopDashboardPage() {
     }
   };
 
-  const generateQrCode = async (shopId: string, schemeOverride?: RoutingScheme) => {
+  const generateQrCode = async (shopId: string) => {
     try {
-      let activeScheme: RoutingScheme = schemeOverride || qrScheme;
-      let activeBaseUrl = '';
-      try {
-        const configRes = await fetch('/api/shops/routing/config');
-        if (configRes.ok) {
-          const cfg = await configRes.json();
-          if (!schemeOverride && cfg.scheme) {
-            activeScheme = cfg.scheme;
-            setQrScheme(cfg.scheme);
-          }
-          if (cfg.baseUrl) activeBaseUrl = cfg.baseUrl;
-        }
-      } catch (e) {
-        console.warn('Could not load routing config:', e);
-      }
-
-      const targetUrl = buildCustomerUrl(shop || { id: shopId }, activeScheme, activeBaseUrl);
-      setQrTargetUrl(targetUrl);
+      const isLocal = typeof window !== 'undefined' && window.location.hostname.includes('localhost');
+      const targetUrl = shop?.slug
+        ? (isLocal ? `http://${shop.slug}.localhost:3000` : `https://${shop.slug}.mellod.in`)
+        : `${window.location.origin}/?shop=${shopId}`;
 
       const url = await QRCode.toDataURL(targetUrl, {
         width: 480,
@@ -2107,33 +2090,12 @@ export default function ShopDashboardPage() {
             <div className="figma-card p-6 bg-white border border-slate-200 text-center max-w-md mx-auto space-y-4">
               <div>
                 <span className="text-[10px] font-bold text-white bg-[#0e7490] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                  Official Counter Standee QR
+                  Official Counter Standee
                 </span>
                 <h2 className="text-base font-extrabold text-slate-900 mt-2">
                   {shop.name}
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">{shop.location}</p>
-              </div>
-
-              {/* Scheme Selector */}
-              <div className="flex justify-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                {(['path', 'subdomain', 'query'] as RoutingScheme[]).map((scheme) => (
-                  <button
-                    key={scheme}
-                    type="button"
-                    onClick={() => {
-                      setQrScheme(scheme);
-                      generateQrCode(shop.id, scheme);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                      qrScheme === scheme
-                        ? 'bg-white text-[#0e7490] shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {scheme === 'path' ? 'Universal Path' : scheme === 'subdomain' ? 'Subdomain' : 'Query Param'}
-                  </button>
-                ))}
               </div>
 
               {/* QR Image */}
@@ -2144,20 +2106,14 @@ export default function ShopDashboardPage() {
                     alt="Counter Standee QR"
                     className="w-56 h-56 mx-auto object-contain"
                   />
-                  <span className="text-xs font-mono font-bold text-[#0e7490] block mt-2 break-all max-w-[280px]">
-                    {qrTargetUrl || (shop.slug ? `${shop.slug}.mellod.in` : `COUNTER ID: ${shop.id}`)}
+                  <span className="text-xs font-mono font-bold text-[#0e7490] block mt-2">
+                    {shop.slug ? `${shop.slug}.mellod.in` : `COUNTER ID: ${shop.id}`}
                   </span>
                 </div>
               )}
 
-              {/* Verified Customer Gateway Badge */}
-              <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-medium flex items-center justify-center gap-1.5">
-                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Opens Document Upload &amp; Live Queue directly (never login)</span>
-              </div>
-
               <p className="text-xs text-slate-600 max-w-xs mx-auto">
-                Print and display this QR code at your counter. Customers scanning this QR will instantly connect to document upload for <strong>{shop.name}</strong>.
+                Print and display this QR code at your shop counter. Customers scanning this QR will instantly connect to <strong>{shop.slug ? `${shop.slug}.mellod.in` : 'this counter'}</strong>.
               </p>
 
               <div className="flex gap-2">
@@ -2169,30 +2125,17 @@ export default function ShopDashboardPage() {
                   <Download className="w-3.5 h-3.5" />
                   <span>Download Standee Poster</span>
                 </a>
-
-                {qrTargetUrl && (
-                  <a
-                    href={qrTargetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3.5 py-2.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold hover:bg-emerald-100 flex items-center gap-1 cursor-pointer"
-                    title="Test Customer View in a new tab"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Test</span>
-                  </a>
-                )}
-
                 <button
-                  type="button"
                   onClick={() => {
-                    const cleanUrl = qrTargetUrl || (shop.slug ? `https://${shop.slug}.mellod.in` : `${window.location.origin}/?shop=${shop.id}`);
+                    const isLocal = typeof window !== 'undefined' && window.location.hostname.includes('localhost');
+                    const cleanUrl = shop.slug
+                      ? (isLocal ? `http://${shop.slug}.localhost:3000` : `https://${shop.slug}.mellod.in`)
+                      : `${window.location.origin}/?shop=${shop.id}`;
                     navigator.clipboard.writeText(cleanUrl);
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1 cursor-pointer"
-                  title="Copy Destination Link"
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold hover:bg-slate-100 flex items-center gap-1"
                 >
                   {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedLink ? 'Copied' : 'Copy'}</span>
