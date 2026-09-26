@@ -79,6 +79,7 @@ export function initSocketServer(httpServer: HttpServer): Server {
     // Shop Admin subscribes to shop updates
     socket.on('subscribe_shop', async (data: { shopId: string }) => {
       if (!data || !data.shopId) return;
+      (socket as any).data = { ...(socket as any).data, shopId: data.shopId };
       const room = `shop:${data.shopId}`;
       socket.join(room);
       console.log(`[Socket] Admin ${socket.id} subscribed to ${room}`);
@@ -97,6 +98,7 @@ export function initSocketServer(httpServer: HttpServer): Server {
     // Shop Admin heartbeat (Phase 2A)
     socket.on('shop_heartbeat', (data: { shopId: string; connectedPrinterCount: number }) => {
       if (!data?.shopId) return;
+      (socket as any).data = { ...(socket as any).data, shopId: data.shopId };
       const existing = shopLiveStatus.get(data.shopId);
       if (existing?.graceTimer) {
         clearTimeout(existing.graceTimer);
@@ -107,6 +109,34 @@ export function initSocketServer(httpServer: HttpServer): Server {
         hasPrinters: (data.connectedPrinterCount || 0) > 0,
         connectedPrinterCount: data.connectedPrinterCount || 0,
       });
+    });
+
+    // Handle socket disconnect (Auto-close counter with grace period)
+    socket.on('disconnect', async () => {
+      const shopId = (socket as any).data?.shopId;
+      if (shopId) {
+        console.log(`[Socket] Shop counter session disconnected: ${shopId}`);
+        const existing = shopLiveStatus.get(shopId);
+        if (existing) {
+          if (existing.graceTimer) clearTimeout(existing.graceTimer);
+          existing.graceTimer = setTimeout(async () => {
+            shopLiveStatus.delete(shopId);
+            try {
+              await query('UPDATE shops SET is_open = false WHERE id = $1', [shopId]);
+              if (io) {
+                io.to(`shop:${shopId}`).emit('shop_open_status_changed', { shopId, is_open: false });
+                const updatedShopRes = await query('SELECT * FROM shops WHERE id = $1', [shopId]);
+                if (updatedShopRes.rowCount > 0) {
+                  io.emit('shop_updated', updatedShopRes.rows[0]);
+                }
+              }
+              console.log(`[Socket] Shop ${shopId} counter automatically marked closed after disconnect.`);
+            } catch (err) {
+              console.error('[Socket] Error auto-closing shop on disconnect:', err);
+            }
+          }, 6000);
+        }
+      }
     });
 
     // ==========================================

@@ -185,6 +185,28 @@ router.put('/:id/toggle-open', shopAuthMiddleware, async (req: any, res: Respons
   }
 });
 
+// Explicit Close Counter Endpoint (Supports web beacons, unload events, and API calls)
+router.post(['/:id/close', '/:id/close-beacon'], async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    await query('UPDATE shops SET is_open = false WHERE id = $1', [id]);
+    const updatedShop = await getShopWithDetails(id);
+
+    const io = getSocketServer();
+    if (io) {
+      io.to(`shop:${id}`).emit('shop_open_status_changed', { shopId: id, is_open: false });
+      if (updatedShop) {
+        io.emit('shop_updated', updatedShop);
+      }
+    }
+
+    res.json({ success: true, message: 'Shop counter closed successfully.', is_open: false });
+  } catch (err: any) {
+    console.error('[Shop Close] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 
 // 1. List all shops
 router.get('/', async (_req: Request, res: Response) => {
@@ -395,6 +417,97 @@ router.get('/:id/stats', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('[Shops] Error fetching shop stats:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Comprehensive Functional Analytics for Shop Dashboard
+router.get('/:id/analytics', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const range = (req.query.range as string) || 'today';
+
+    let dateFilter = '(completed_at >= CURRENT_DATE OR created_at >= CURRENT_DATE)';
+    if (range === 'week') {
+      dateFilter = `(completed_at >= CURRENT_DATE - INTERVAL '7 days' OR created_at >= CURRENT_DATE - INTERVAL '7 days')`;
+    } else if (range === 'month') {
+      dateFilter = `(completed_at >= CURRENT_DATE - INTERVAL '30 days' OR created_at >= CURRENT_DATE - INTERVAL '30 days')`;
+    } else if (range === 'all') {
+      dateFilter = '1=1';
+    }
+
+    // Revenue and order counts
+    const overviewRes = await query(
+      `SELECT 
+         COUNT(*) as total_orders,
+         COUNT(CASE WHEN status IN ('ready', 'picked_up') THEN 1 END) as completed_orders,
+         COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_orders,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN price ELSE 0 END), 0) as gross_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') AND payment_method IN ('counter_cash') THEN price ELSE 0 END), 0) as cash_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') AND payment_method NOT IN ('counter_cash') THEN price ELSE 0 END), 0) as online_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN platform_fee ELSE 0 END), 0) as platform_fees,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as total_sheets
+       FROM print_jobs 
+       WHERE shop_id = $1 AND ${dateFilter}`,
+      [id]
+    );
+
+    // Color mode breakdown
+    const colorBreakdownRes = await query(
+      `SELECT 
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = true THEN 1 ELSE 0 END), 0) as color_orders,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = false OR settings->>'color' IS NULL THEN 1 ELSE 0 END), 0) as mono_orders,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = true THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as color_sheets,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = false OR settings->>'color' IS NULL THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as mono_sheets
+       FROM print_jobs 
+       WHERE shop_id = $1 AND status IN ('ready', 'picked_up') AND ${dateFilter}`,
+      [id]
+    );
+
+    // Unsettled cash fee from shop
+    const shopRes = await query('SELECT unsettled_cash_fee FROM shops WHERE id = $1', [id]);
+    const unsettledCashFee = parseFloat(shopRes.rows[0]?.unsettled_cash_fee || '0');
+
+    // Recent 10 jobs
+    const recentJobsRes = await query(
+      `SELECT id, token_code, file_name, price, payment_method, platform_fee, status, created_at, completed_at,
+              settings->>'color' as is_color, page_count
+       FROM print_jobs 
+       WHERE shop_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT 10`,
+      [id]
+    );
+
+    const ov = overviewRes.rows[0] || {};
+    const cb = colorBreakdownRes.rows[0] || {};
+
+    const grossRev = parseFloat(ov.gross_revenue || '0');
+    const cashRev = parseFloat(ov.cash_revenue || '0');
+    const onlineRev = parseFloat(ov.online_revenue || '0');
+    const platformFees = parseFloat(ov.platform_fees || '0');
+    const netPayout = Math.max(0, grossRev - platformFees);
+
+    res.json({
+      range,
+      grossRevenue: grossRev,
+      cashRevenue: cashRev,
+      onlineRevenue: onlineRev,
+      platformFees: platformFees,
+      unsettledCashFee: unsettledCashFee,
+      netPayout: netPayout,
+      completedOrders: parseInt(ov.completed_orders || '0', 10),
+      totalOrders: parseInt(ov.total_orders || '0', 10),
+      failedOrders: parseInt(ov.failed_orders || '0', 10),
+      totalSheets: parseInt(ov.total_sheets || '0', 10),
+      colorOrders: parseInt(cb.color_orders || '0', 10),
+      monoOrders: parseInt(cb.mono_orders || '0', 10),
+      colorSheets: parseInt(cb.color_sheets || '0', 10),
+      monoSheets: parseInt(cb.mono_sheets || '0', 10),
+      recentTransactions: recentJobsRes.rows,
+    });
+  } catch (err: any) {
+    console.error('[Shops] Error fetching shop analytics:', err);
     res.status(500).json({ error: err.message });
   }
 });

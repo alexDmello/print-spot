@@ -80,6 +80,10 @@ export async function loginShop(identifier: string, secret: string): Promise<{ t
     { expiresIn: '30d' }
   );
 
+  // Always initialize counter as closed upon login
+  await query('UPDATE shops SET is_open = false WHERE id = $1', [shop.id]);
+  shop.is_open = false;
+
   const { pin, password_hash, ...safeShop } = shop;
   return { token, shop: safeShop };
 }
