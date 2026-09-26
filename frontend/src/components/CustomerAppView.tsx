@@ -1,0 +1,777 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Header } from '@/components/Header';
+import { FileUpload } from '@/components/FileUpload';
+import { PrintSettings } from '@/components/PrintSettings';
+import { DocumentPreview } from '@/components/DocumentPreview';
+import { CheckoutModal } from '@/components/CheckoutModal';
+import { TokenConfirmation } from '@/components/TokenConfirmation';
+import { LiveQueueTracker } from '@/components/LiveQueueTracker';
+import { PickupReady } from '@/components/PickupReady';
+import { ScanQrLanding } from '@/components/ScanQrLanding';
+import { Shop, UploadedDocument, User } from '@/lib/types';
+import { getSocket } from '@/lib/socket';
+import { RotateCw, QrCode, Sparkles, MapPin, Clock, ArrowRight, Layers, Search, AlertTriangle, AlertCircle } from 'lucide-react';
+
+export function CustomerAppView({ forcedShopSlugOrId }: { forcedShopSlugOrId?: string } = {}) {
+  const [step, setStep] = useState<number>(1);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
+  const [isLoadingShop, setIsLoadingShop] = useState<boolean>(true);
+  const [isQrScanned, setIsQrScanned] = useState<boolean>(false);
+  const [scanErrorMessage, setScanErrorMessage] = useState<string | null>(null);
+
+  // Uploaded files list with per-file settings
+  const [files, setFiles] = useState<UploadedDocument[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+
+  // User
+  const [user, setUser] = useState<User | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  // Job & Payment state
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [tokenCode, setTokenCode] = useState<string>('');
+  const [tokenNumber, setTokenNumber] = useState<number>(0);
+  const [queuePosition, setQueuePosition] = useState<number>(1);
+  const [estimatedWait, setEstimatedWait] = useState<number>(0);
+  const [pickupCode, setPickupCode] = useState<string>('');
+
+  // Cash payment confirmation pending state (Phase 4B)
+  const [isAwaitingCashConfirm, setIsAwaitingCashConfirm] = useState<boolean>(false);
+  const [cashPendingPrice, setCashPendingPrice] = useState<number>(0);
+
+  // Counter Availability State (Phase 2C)
+  const [isCounterLive, setIsCounterLive] = useState<boolean | null>(null);
+  const [connectedPrinterCount, setConnectedPrinterCount] = useState<number>(0);
+
+  useEffect(() => {
+    fetchShops();
+  }, [forcedShopSlugOrId]);
+
+  // Listen to live shop pricing & counter open/close updates over Socket.IO
+  useEffect(() => {
+    const socket = getSocket();
+    const handleUpdate = (updatedShop: Shop) => {
+      setSelectedShop((prev) => (prev && prev.id === updatedShop.id ? { ...prev, ...updatedShop } : prev));
+      setShops((prev) => prev.map((s) => (s.id === updatedShop.id ? { ...s, ...updatedShop } : s)));
+    };
+
+    const handleOpenStatus = ({ shopId, is_open }: { shopId: string; is_open: boolean }) => {
+      setSelectedShop((prev) => (prev && prev.id === shopId ? { ...prev, is_open } : prev));
+      setShops((prev) => prev.map((s) => (s.id === shopId ? { ...s, is_open } : s)));
+    };
+
+    socket.on('shop_pricing_updated', handleUpdate);
+    socket.on('shop_updated', handleUpdate);
+    socket.on('shop_open_status_changed', handleOpenStatus);
+
+    return () => {
+      socket.off('shop_pricing_updated', handleUpdate);
+      socket.off('shop_updated', handleUpdate);
+      socket.off('shop_open_status_changed', handleOpenStatus);
+    };
+  }, []);
+
+  const checkCounterAvailability = async (shopId: string) => {
+    try {
+      const res = await fetch(`/api/shops/${shopId}/availability`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsCounterLive(data.isLive && data.isOpen);
+        setConnectedPrinterCount(data.connectedPrinterCount || 0);
+        return data;
+      }
+    } catch (err) {
+      console.warn('Availability check failed:', err);
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (selectedShop?.id) {
+      checkCounterAvailability(selectedShop.id);
+      const timer = setInterval(() => {
+        checkCounterAvailability(selectedShop.id);
+      }, 15000);
+      return () => clearInterval(timer);
+    }
+  }, [selectedShop?.id]);
+
+  // Subscribe to Job Room & listen for shopkeeper cash confirmation (Phase 4B)
+  useEffect(() => {
+    if (!jobId) return;
+    const socket = getSocket();
+    socket.emit('subscribe_job', { jobId });
+
+    const handlePaymentConfirmed = (data: any) => {
+      if (data.jobId === jobId) {
+        setIsAwaitingCashConfirm(false);
+        setTokenCode(data.tokenCode || '');
+        setTokenNumber(data.tokenNumber || 0);
+        setQueuePosition(data.position || 1);
+        setPickupCode(data.pickupCode || '');
+        setEstimatedWait(data.estimatedWaitMinutes || 2);
+        setStep(5);
+
+        // Positive chime
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        } catch {
+          // Ignored
+        }
+
+        if (typeof window !== 'undefined' && selectedShop) {
+          localStorage.setItem(
+            `printspot_active_order_${selectedShop.id}`,
+            JSON.stringify({
+              jobId: data.jobId || jobId,
+              tokenCode: data.tokenCode,
+              tokenNumber: data.tokenNumber,
+              queuePosition: data.position,
+              pickupCode: data.pickupCode,
+              estimatedWait: data.estimatedWaitMinutes,
+              step: 5,
+            })
+          );
+        }
+      }
+    };
+
+    const handleCashDeclined = (data: any) => {
+      if (data.jobId === jobId) {
+        setIsAwaitingCashConfirm(false);
+        alert(data.reason || 'Cash payment was declined at counter.');
+      }
+    };
+
+    socket.on('payment_confirmed', handlePaymentConfirmed);
+    socket.on('cash_order_declined', handleCashDeclined);
+
+    return () => {
+      socket.off('payment_confirmed', handlePaymentConfirmed);
+      socket.off('cash_order_declined', handleCashDeclined);
+    };
+  }, [jobId, selectedShop]);
+
+  const fetchShops = async () => {
+    try {
+      const res = await fetch('/api/shops');
+      const allShops = await res.json();
+      const activeShops = Array.isArray(allShops) ? allShops.filter((s: Shop) => s.is_active !== false) : [];
+      setShops(activeShops);
+
+      if (typeof window !== 'undefined') {
+        const host = window.location.hostname.toLowerCase();
+        const params = new URLSearchParams(window.location.search);
+        let shopIdParam = forcedShopSlugOrId || params.get('shop');
+
+        // Only redirect to portal dashboards if NOT accessing a specific customer counter
+        if (!shopIdParam && (host === 'admin.mellod.in' || host.startsWith('admin.localhost'))) {
+          window.location.replace('/admin');
+          return;
+        }
+
+        if (!shopIdParam && (host === 'shop.mellod.in' || host.startsWith('shop.localhost'))) {
+          window.location.replace('/shop');
+          return;
+        }
+
+        // Subdomain extraction fallback ({slug}.mellod.in -> customer counter {slug})
+        if (!shopIdParam) {
+          if (host.endsWith('.mellod.in')) {
+            const sub = host.replace(/\.mellod\.in$/, '');
+            if (!['www', 'admin', 'shop', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+              shopIdParam = sub;
+            }
+          } else if (host.endsWith('.localhost')) {
+            const sub = host.replace(/\.localhost$/, '');
+            if (!['admin', 'shop', 'api', 'app', 'mail', 'root', 'status'].includes(sub)) {
+              shopIdParam = sub;
+            }
+          }
+        }
+
+        if (shopIdParam) {
+          // Fetch verified public counter details
+          try {
+            const publicRes = await fetch(`/api/shops/${encodeURIComponent(shopIdParam)}/public`);
+            const publicData = await publicRes.json();
+
+            if (publicRes.ok && publicData.shop) {
+              const matchedShop = publicData.shop;
+              setSelectedShop(matchedShop);
+              setIsQrScanned(true);
+
+              // Check if customer has an existing active order session to restore
+              const savedOrderRaw = localStorage.getItem(`printspot_active_order_${matchedShop.id}`);
+              if (savedOrderRaw) {
+                try {
+                  const saved = JSON.parse(savedOrderRaw);
+                  if (saved.jobId) {
+                    const jobCheckRes = await fetch(`/api/jobs/${saved.jobId}`);
+                    if (jobCheckRes.ok) {
+                      const jobData = await jobCheckRes.json();
+                      const status = jobData.job?.status;
+                      if (status === 'waiting' || status === 'printing') {
+                        setJobId(saved.jobId);
+                        setTokenCode(saved.tokenCode || jobData.job.token_code);
+                        setTokenNumber(saved.tokenNumber || jobData.job.token_number);
+                        setQueuePosition(jobData.position || saved.queuePosition || 1);
+                        setPickupCode(saved.pickupCode || jobData.job.pickup_code);
+                        setEstimatedWait(jobData.estimatedWaitMinutes || saved.estimatedWait || 5);
+                        setStep(6); // Restore directly to Live Queue Tracker!
+                        return;
+                      } else if (status === 'ready') {
+                        setJobId(saved.jobId);
+                        setTokenCode(saved.tokenCode || jobData.job.token_code);
+                        setPickupCode(saved.pickupCode || jobData.job.pickup_code);
+                        setStep(7); // Restore to Pickup Ready!
+                        return;
+                      } else {
+                        // Job completed, picked up or cancelled -> clear
+                        localStorage.removeItem(`printspot_active_order_${matchedShop.id}`);
+                      }
+                    }
+                  }
+                } catch (sessionErr) {
+                  console.warn('Failed to restore active order:', sessionErr);
+                }
+              }
+
+              setStep(1);
+              return;
+            } else {
+              setScanErrorMessage(publicData.error || 'The scanned QR code is invalid or inactive.');
+              setSelectedShop(null);
+            }
+          } catch (shopErr) {
+            setScanErrorMessage('Failed to connect to the scanned print counter.');
+            setSelectedShop(null);
+          }
+        } else {
+          // No QR scanned: enforce scan-only landing screen!
+          setSelectedShop(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load shops:', err);
+    } finally {
+      setIsLoadingShop(false);
+    }
+  };
+
+  const calculateTotalPrice = () => {
+    if (!selectedShop || files.length === 0) return 0;
+    const services = selectedShop.services || [];
+    const bwService = services.find(
+      (s) => s.name.toLowerCase().includes('black') || s.name.toLowerCase().includes('b&w')
+    );
+    const colorService = services.find((s) => s.name.toLowerCase().includes('color'));
+
+    const pricePerBw = bwService
+      ? Number(bwService.price)
+      : Number(selectedShop.price_per_bw) || 2;
+    const pricePerColor = colorService
+      ? Number(colorService.price)
+      : Number(selectedShop.price_per_color) || 10;
+
+    const isImageFile = (f: UploadedDocument) => {
+      const ext = (f.fileName.split('.').pop() || '').toLowerCase();
+      return (
+        ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp'].includes(ext) ||
+        (f.mimeType?.startsWith('image/') ?? false)
+      );
+    };
+
+    const imageFiles = files.filter(isImageFile);
+    const otherFiles = files.filter((f) => !isImageFile(f));
+    const hasCombinedImages = imageFiles.length > 0;
+
+    let printTotal = 0;
+    let totalCopies = 0;
+    let totalPhysicalSheets = 0;
+
+    if (hasCombinedImages) {
+      const copies = imageFiles[0]?.copies || 1;
+      const isColor = imageFiles.some((f) => f.color);
+      const rate = isColor ? pricePerColor : pricePerBw;
+      const currentGrid = (imageFiles[0]?.pagesPerSheet as 1 | 2 | 4 | 6 | 9) || (imageFiles.length === 1 ? 1 : imageFiles.length <= 2 ? 2 : 4);
+      const rawSheets = Math.max(1, Math.ceil(imageFiles.length / currentGrid));
+      const duplex = imageFiles[0]?.duplex ?? false;
+      const sheetsPerCopy = duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+      printTotal += sheetsPerCopy * copies * rate;
+      totalCopies += copies;
+      totalPhysicalSheets += sheetsPerCopy * copies;
+
+      otherFiles.forEach((f) => {
+        const pagesPerSheet = f.pagesPerSheet || 1;
+        const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+        const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+        const rate = f.color ? pricePerColor : pricePerBw;
+        printTotal += sheetsPerCopy * (f.copies || 1) * rate;
+        totalCopies += f.copies || 1;
+        totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+      });
+    } else {
+      files.forEach((f) => {
+        const pagesPerSheet = f.pagesPerSheet || 1;
+        const rawSheets = Math.ceil((f.pageCount || 1) / pagesPerSheet);
+        const sheetsPerCopy = f.duplex ? Math.ceil(rawSheets / 2) : rawSheets;
+        const rate = f.color ? pricePerColor : pricePerBw;
+        printTotal += sheetsPerCopy * (f.copies || 1) * rate;
+        totalCopies += f.copies || 1;
+        totalPhysicalSheets += sheetsPerCopy * (f.copies || 1);
+      });
+    }
+
+    const customServices = services.filter((s) => !s.is_default && s.enabled);
+    let addOnsCost = 0;
+    customServices.forEach((srv) => {
+      if (selectedServiceIds.includes(srv.id)) {
+        if (srv.unit === 'page') {
+          addOnsCost += Number(srv.price) * totalPhysicalSheets;
+        } else {
+          addOnsCost += Number(srv.price) * totalCopies;
+        }
+      }
+    });
+
+    return printTotal + addOnsCost;
+  };
+
+  const handleCreateJob = async (): Promise<string> => {
+    if (!selectedShop || files.length === 0 || !user) {
+      throw new Error('Please ensure you are logged in and documents are uploaded.');
+    }
+
+    const totalPrice = calculateTotalPrice();
+    const primaryFile = files[0];
+    const summaryName =
+      files.length === 1
+        ? primaryFile.fileName
+        : `${primaryFile.fileName} (+${files.length - 1} more)`;
+    const totalPages = files.reduce((acc, f) => acc + (f.pageCount || 1), 0);
+    const totalCopies = files.reduce((acc, f) => acc + (f.copies || 1), 0);
+    const totalSize = files.reduce((acc, f) => acc + (f.fileSize || 0), 0);
+    const hasColor = files.some((f) => f.color);
+
+    const res = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id,
+        shopId: selectedShop.id,
+        fileUrl: primaryFile.fileUrl,
+        fileName: summaryName,
+        fileSize: totalSize,
+        pageCount: totalPages,
+        settings: {
+          copies: totalCopies,
+          color: hasColor,
+          files: files.map((f) => ({
+            fileName: f.fileName,
+            fileUrl: f.fileUrl,
+            fileSize: f.fileSize,
+            pageCount: f.pageCount,
+            mimeType: f.mimeType,
+            copies: f.copies || 1,
+            color: f.color || false,
+            duplex: f.duplex || false,
+            pagesPerSheet: f.pagesPerSheet || 1,
+            orientation: f.orientation || (f.mimeType?.startsWith('image/') ? 'landscape' : 'portrait'),
+          })),
+          selectedServiceIds,
+        },
+        price: totalPrice,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to create job');
+
+    setJobId(data.job.id);
+    return data.job.id;
+  };
+
+  const handleResetFlow = () => {
+    if (selectedShop && typeof window !== 'undefined') {
+      localStorage.removeItem(`printspot_active_order_${selectedShop.id}`);
+    }
+    setStep(1);
+    setFiles([]);
+    setSelectedServiceIds([]);
+    setJobId(null);
+  };
+
+  // Back handler for navigation
+  const handleBack = () => {
+    if (step === 2) setStep(1);
+    else if (step === 3) setStep(2);
+    else if (step === 4) setStep(3);
+    else if (step === 6) setStep(1);
+  };
+
+  // Mobile swipe-to-go-back gesture support
+  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      touchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        time: Date.now(),
+      };
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!touchStartRef.current) return;
+      const touch = e.changedTouches[0];
+      const deltaX = touch.clientX - touchStartRef.current.x;
+      const deltaY = touch.clientY - touchStartRef.current.y;
+      const deltaTime = Date.now() - touchStartRef.current.time;
+      const startX = touchStartRef.current.x;
+      touchStartRef.current = null;
+
+      // Do not trigger back if interacting with form inputs, selects, or horizontal scroll containers
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, .overflow-x-auto, [data-prevent-swipe]')) {
+        return;
+      }
+
+      // Detect edge swipe right (iOS/Android native pattern: start near edge, swipe right)
+      // or general horizontal swipe right with minimal vertical movement
+      const isEdgeSwipe = startX < 120 && deltaX > 45 && Math.abs(deltaY) < 65;
+      const isGeneralSwipe = deltaX > 75 && Math.abs(deltaY) < 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5;
+
+      if ((isEdgeSwipe || isGeneralSwipe) && deltaTime < 700) {
+        if ((step > 1 && step < 5) || step === 6) {
+          handleBack();
+        }
+      }
+    };
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [step]);
+
+  if (isLoadingShop) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 text-center">
+        <RotateCw className="w-8 h-8 text-[#0e7490] animate-spin mb-3" />
+        <p className="text-xs text-slate-500 font-medium">Connecting to PrintSpot...</p>
+      </div>
+    );
+  }
+
+  // Scan-Only Enforcement: If no valid counter QR was scanned, show the Scan QR Landing Portal!
+  if (!selectedShop) {
+    return (
+      <ScanQrLanding
+        shops={shops}
+        onSelectShop={(s) => {
+          window.location.href = `/?shop=${encodeURIComponent(s.id)}`;
+        }}
+        errorMessage={scanErrorMessage}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
+      <Header
+        shopName={selectedShop.name}
+        stepNumber={Math.min(4, step)}
+        totalSteps={4}
+        onBack={step > 1 && step < 5 ? handleBack : undefined}
+      />
+
+      {/* Main Content Area */}
+      <main className="flex-1 w-full max-w-lg mx-auto p-4 sm:p-5 flex flex-col justify-start">
+        {/* STEP 1: UNIFIED SHOP DETAILS & DIRECT DOCUMENT UPLOAD */}
+        {step === 1 && (
+          <div className="space-y-4">
+            {/* Offline Counter Warning (Phase 2C) */}
+            {isCounterLive === false && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-2.5 text-xs shadow-2xs">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Print Counter Offline</span>
+                  <span>This counter is currently not connected to the print network or has no active physical printers. Please ask the shopkeeper to check their connection.</span>
+                </div>
+              </div>
+            )}
+
+            {/* Paused Counter Warning */}
+            {selectedShop.is_open === false && isCounterLive !== false && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5 text-xs shadow-2xs">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Counter Temporarily Paused</span>
+                  <span>This print counter is temporarily paused and not accepting new jobs. Please check back shortly or speak to the shopkeeper.</span>
+                </div>
+              </div>
+            )}
+
+            {/* Verified Counter Identity Card */}
+            <div className="figma-card p-3.5 bg-gradient-to-r from-[#ecfeff] to-cyan-50/40 border border-[#a5f3fc]">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-white bg-[#0e7490] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      Verified Counter
+                    </span>
+                    {selectedShop.is_open !== false && isCounterLive !== false ? (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Counter Open
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-full">
+                        {isCounterLive === false ? 'Counter Offline' : 'Counter Paused'}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-sm font-bold text-slate-900 mt-1">
+                    {selectedShop.name}
+                  </h2>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-slate-400 font-medium block">Counter Token</span>
+                  <span className="text-xs font-mono font-bold text-[#0e7490]">
+                    {selectedShop.nowServingToken || 'Active'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-y-1 gap-x-3 text-[11px] text-slate-600 border-t border-cyan-100/80 pt-2">
+                <span className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-[#0e7490]" />
+                  <span>{selectedShop.location}</span>
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{selectedShop.opening_time || '9:00 AM'} - {selectedShop.closing_time || '9:00 PM'}</span>
+                </span>
+                <div className="flex items-center gap-2 ml-auto font-bold text-[#0e7490]">
+                  <span>B&W ₹{selectedShop.price_per_bw || 2}/pg</span>
+                  <span>•</span>
+                  <span>Color ₹{selectedShop.price_per_color || 10}/pg</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Direct Multi-Document Upload Dropzone */}
+            <FileUpload
+              uploadedFiles={files}
+              basePrice={Number(selectedShop.price_per_bw) || 2}
+              onSuccess={async (uploadedDocs) => {
+                const avail = await checkCounterAvailability(selectedShop.id);
+                if (avail && (!avail.isLive || !avail.isOpen)) {
+                  alert('This print counter is currently offline or paused. Please check with the operator.');
+                  return;
+                }
+                setFiles(uploadedDocs);
+                setStep(2);
+              }}
+            />
+
+            {/* Existing Order Lookup Footer */}
+            {jobId && (
+              <button
+                type="button"
+                onClick={() => setStep(6)}
+                className="w-full py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5 text-[#0e7490]" />
+                <span>Track Active Order Token ({tokenCode})</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* STEP 2: PRINT SETTINGS */}
+        {step === 2 && files.length > 0 && (
+          <PrintSettings
+            files={files}
+            shop={selectedShop}
+            onFilesChange={setFiles}
+            selectedServiceIds={selectedServiceIds}
+            onSelectedServicesChange={setSelectedServiceIds}
+            onProceed={() => setStep(3)}
+            onBack={() => setStep(1)}
+          />
+        )}
+
+        {/* STEP 3: DOCUMENT PREVIEW */}
+        {step === 3 && files.length > 0 && (
+          <DocumentPreview
+            files={files}
+            totalPrice={calculateTotalPrice()}
+            onGridChange={(fileId, g) =>
+              setFiles((prev) =>
+                prev.map((f) => (f.id === fileId ? { ...f, pagesPerSheet: g } : f))
+              )
+            }
+            onOrientationChange={(fileId, orient) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === fileId || (f.combineImages && prev.find((p) => p.id === fileId)?.combineImages)
+                    ? { ...f, orientation: orient }
+                    : f
+                )
+              )
+            }
+            onPageFitChange={(fileId, fit) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === fileId || (f.combineImages && prev.find((p) => p.id === fileId)?.combineImages)
+                    ? { ...f, pageFit: fit }
+                    : f
+                )
+              )
+            }
+            onProceed={() => setStep(4)}
+          />
+        )}
+
+        {/* STEP 4: CHECKOUT & PAYMENT */}
+        {step === 4 && files.length > 0 && (
+          isAwaitingCashConfirm ? (
+            <div className="figma-card p-6 space-y-4 bg-white border border-amber-300 shadow-md text-center animate-in fade-in">
+              <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                <RotateCw className="w-7 h-7 animate-spin" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Awaiting Counter Verification
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-1">
+                  Pay ₹{cashPendingPrice.toFixed(2)} at Counter
+                </h2>
+                <p className="text-xs text-slate-600 leading-relaxed px-2">
+                  Please hand <strong className="text-slate-900">₹{cashPendingPrice.toFixed(2)} in cash</strong> to the shopkeeper. Once confirmed, your queue token will generate automatically!
+                </p>
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-slate-700">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                <span>Listening for counter confirmation...</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAwaitingCashConfirm(false)}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer pt-2"
+              >
+                Change payment method
+              </button>
+            </div>
+          ) : (
+            <CheckoutModal
+              files={files}
+              selectedServiceIds={selectedServiceIds}
+              shop={selectedShop}
+              user={user}
+              onUserAuthenticated={(u, token) => {
+                setUser(u);
+                setAuthToken(token);
+              }}
+              jobId={jobId}
+              createJob={handleCreateJob}
+              onPaymentSuccess={(data) => {
+                if (data.pendingConfirmation) {
+                  setJobId(data.jobId);
+                  setCashPendingPrice(Number(data.price) || calculateTotalPrice());
+                  setIsAwaitingCashConfirm(true);
+                  return;
+                }
+                setTokenCode(data.tokenCode || '');
+                setTokenNumber(data.tokenNumber || 0);
+                setQueuePosition(data.position || 1);
+                setPickupCode(data.pickupCode || '');
+                setEstimatedWait(data.estimatedWaitMinutes || 2);
+                setStep(5);
+
+                // Cache active order in localStorage for instant restore on refresh
+                if (typeof window !== 'undefined' && selectedShop) {
+                  localStorage.setItem(
+                    `printspot_active_order_${selectedShop.id}`,
+                    JSON.stringify({
+                      jobId: data.jobId || jobId,
+                      tokenCode: data.tokenCode,
+                      tokenNumber: data.tokenNumber,
+                      queuePosition: data.position,
+                      pickupCode: data.pickupCode,
+                      estimatedWait: data.estimatedWaitMinutes,
+                      step: 5,
+                    })
+                  );
+                }
+              }}
+              onBack={() => setStep(3)}
+            />
+          )
+        )}
+
+        {/* STEP 5: TOKEN CONFIRMATION */}
+        {step === 5 && (
+          <TokenConfirmation
+            tokenCode={tokenCode}
+            tokenNumber={tokenNumber}
+            position={queuePosition}
+            estimatedWaitMinutes={estimatedWait}
+            pickupCode={pickupCode}
+            totalPrice={calculateTotalPrice()}
+            onProceedToQueue={() => setStep(6)}
+          />
+        )}
+
+        {/* STEP 6: LIVE QUEUE TRACKER */}
+        {step === 6 && (
+          <LiveQueueTracker
+            jobId={jobId || 'demo_job'}
+            initialTokenCode={tokenCode}
+            initialPosition={queuePosition}
+            initialEstimatedWait={estimatedWait}
+            pickupCode={pickupCode}
+            onReadyForPickup={() => setStep(7)}
+          />
+        )}
+
+        {/* STEP 7: PICKUP READY PIN & QR */}
+        {step === 7 && (
+          <PickupReady
+            jobId={jobId || 'demo_job'}
+            tokenCode={tokenCode}
+            pickupCode={pickupCode}
+            shopName={selectedShop.name}
+            shopLocation={selectedShop.location}
+            onReset={handleResetFlow}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default CustomerAppView;
