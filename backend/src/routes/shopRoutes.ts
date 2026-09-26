@@ -79,6 +79,25 @@ router.get('/me', shopAuthMiddleware, async (req: any, res: Response) => {
   }
 });
 
+// Public Routing Configuration (for dynamic QR standee generation)
+router.get('/routing/config', async (_req: Request, res: Response) => {
+  try {
+    const result = await query('SELECT value FROM platform_settings WHERE key = $1', ['routing']);
+    if (result.rowCount === 0) {
+      res.json({
+        scheme: 'path',
+        baseUrl: '',
+        domain: 'mellod.in',
+      });
+      return;
+    }
+    const val = typeof result.rows[0].value === 'string' ? JSON.parse(result.rows[0].value) : result.rows[0].value;
+    res.json(val);
+  } catch (err: any) {
+    res.json({ scheme: 'path', baseUrl: '', domain: 'mellod.in' });
+  }
+});
+
 // Public Counter Verification (for Customer QR Scan)
 router.get('/:id/public', async (req: Request, res: Response) => {
   try {

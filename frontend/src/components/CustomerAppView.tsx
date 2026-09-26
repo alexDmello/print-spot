@@ -14,7 +14,11 @@ import { Shop, UploadedDocument, User } from '@/lib/types';
 import { getSocket } from '@/lib/socket';
 import { RotateCw, QrCode, Sparkles, MapPin, Clock, ArrowRight, Layers, Search, AlertTriangle, AlertCircle } from 'lucide-react';
 
-export function CustomerAppView({ forcedShopSlugOrId }: { forcedShopSlugOrId?: string } = {}) {
+export interface CustomerAppViewProps {
+  forcedShopSlugOrId?: string;
+}
+
+export function CustomerAppView({ forcedShopSlugOrId }: CustomerAppViewProps = {}) {
   const [step, setStep] = useState<number>(1);
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
@@ -774,6 +778,4 @@ export function CustomerAppView({ forcedShopSlugOrId }: { forcedShopSlugOrId?: s
   );
 }
 
-export default function CustomerPage() {
-  return <CustomerAppView />;
-}
+export default CustomerAppView;
