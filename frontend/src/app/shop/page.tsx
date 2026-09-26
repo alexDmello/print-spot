@@ -55,6 +55,7 @@ type ShopTab = 'queue' | 'printers' | 'rates' | 'standee' | 'profile';
 export default function ShopDashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ShopTab>('queue');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [shop, setShop] = useState<Shop | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -633,134 +634,379 @@ export default function ShopDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex antialiased">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 p-3.5 rounded-2xl bg-slate-900 text-white text-xs font-semibold shadow-2xl flex items-center gap-2 animate-bounce border border-slate-700">
-          <Bell className="w-4 h-4 text-cyan-400" />
+        <div className="fixed top-4 right-4 z-50 p-3.5 rounded-2xl bg-white border border-slate-200 text-slate-800 text-xs font-semibold shadow-2xl flex items-center gap-2 animate-bounce">
+          <Bell className="w-4 h-4 text-[#0e7490]" />
           <span>{toastMessage}</span>
         </div>
       )}
 
-      {/* Top Counter Bar */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 h-15 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0e7490] to-cyan-500 flex items-center justify-center text-white shadow-sm font-bold text-sm">
-              <Store className="w-5 h-5" />
+      {/* Mobile Drawer Backdrop */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* Responsive Modern Sidebar (Collapsible on mobile, persistent on desktop) */}
+      <aside
+        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-white border-r border-slate-200/90 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 shadow-sm lg:shadow-none ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Sidebar Brand Header */}
+        <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#0e7490] flex items-center justify-center text-white shadow-sm shadow-[#0e7490]/20 font-bold text-sm">
+              <Printer className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-extrabold text-slate-900">{shop.name}</h1>
-                {/* Counter Open / Paused Status Toggle */}
-                <button
-                  onClick={handleToggleOpenState}
-                  className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    shop.is_open !== false
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
-                      : 'bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200'
-                  }`}
-                  title="Click to toggle counter open / paused"
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      shop.is_open !== false ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'
-                    }`}
-                  ></span>
-                  <span>{shop.is_open !== false ? 'Open for Orders' : 'Counter Paused'}</span>
-                </button>
+              <span className="text-sm font-extrabold tracking-tight text-slate-900 block leading-tight">
+                Print<span className="text-[#0e7490]">Spot</span>
+              </span>
+              <span className="text-[10px] text-[#0e7490] font-semibold leading-none">
+                Counter Station
+              </span>
+            </div>
+          </Link>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 lg:hidden cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Sidebar Shop Summary Box */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <span className="text-xs font-extrabold text-slate-900 block truncate">
+                  {shop.name}
+                </span>
+                <span className="text-[10px] text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3 h-3 text-[#0e7490] shrink-0" />
+                  <span className="truncate">{shop.location}</span>
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-[#0e7490]" />
-                <span>{shop.location}</span>
-              </p>
+              <button
+                onClick={handleToggleOpenState}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 transition-colors cursor-pointer ${
+                  shop.is_open !== false
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200'
+                    : 'bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200'
+                }`}
+                title="Toggle counter open / paused"
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    shop.is_open !== false ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'
+                  }`}
+                />
+                <span>{shop.is_open !== false ? 'Open' : 'Paused'}</span>
+              </button>
+            </div>
+            {shop.slug && (
+              <div className="pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-500">
+                <span className="font-mono text-[#0e7490] font-semibold truncate">
+                  {shop.slug}.mellod.in
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Sidebar Navigation */}
+        <div className="flex-1 px-4 py-3 space-y-6 overflow-y-auto">
+          {/* Main Counter Navigation Section */}
+          <div className="space-y-1.5">
+            <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+              Counter Operations
+            </span>
+
+            {/* Live Order Queue */}
+            <button
+              onClick={() => {
+                setActiveTab('queue');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'queue'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Activity className={`w-4 h-4 ${activeTab === 'queue' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Live Order Queue</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {pendingCashOrders.length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 animate-pulse">
+                    {pendingCashOrders.length} Cash
+                  </span>
+                )}
+                {queueSnapshot.activeJobs.length > 0 && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    activeTab === 'queue' ? 'bg-[#cffafe] text-[#0e7490]' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {queueSnapshot.activeJobs.length}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {/* Printers & Spoolers */}
+            <button
+              onClick={() => {
+                setActiveTab('printers');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'printers'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Printer className={`w-4 h-4 ${activeTab === 'printers' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Printers & Spoolers</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                localPrinters.length > 0
+                  ? activeTab === 'printers'
+                    ? 'bg-[#cffafe] text-[#0e7490]'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+              }`}>
+                {localPrinters.length} Ready
+              </span>
+            </button>
+
+            {/* Rates & Services */}
+            <button
+              onClick={() => {
+                setActiveTab('rates');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'rates'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Sliders className={`w-4 h-4 ${activeTab === 'rates' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Rates & Services</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                {services.length}
+              </span>
+            </button>
+
+            {/* Counter Standee QR */}
+            <button
+              onClick={() => {
+                setActiveTab('standee');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'standee'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <QrCode className={`w-4 h-4 ${activeTab === 'standee' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Counter Standee QR</span>
+              </div>
+            </button>
+          </div>
+
+          {/* Quick Access Portals */}
+          <div className="space-y-1.5 pt-4 border-t border-slate-100">
+            <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+              Storefront & Portals
+            </span>
+            <a
+              href={
+                shop.slug
+                  ? typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+                    ? `http://${shop.slug}.localhost:3000`
+                    : `https://${shop.slug}.mellod.in`
+                  : `/?shop=${shop.id}`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 flex items-center justify-between transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <ExternalLink className="w-4 h-4 text-slate-400" />
+                <span>Customer Storefront</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+            </a>
+            <Link
+              href="/admin"
+              className="w-full px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 flex items-center justify-between transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Store className="w-4 h-4 text-slate-400" />
+                <span>Platform Admin</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Sidebar Footer Controls */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50 space-y-2.5">
+          {/* Audio Chime Toggle */}
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`w-full px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer ${
+              audioEnabled
+                ? 'bg-cyan-50/80 text-[#0e7490] border-cyan-200/80'
+                : 'bg-white text-slate-500 border-slate-200'
+            }`}
+            title={audioEnabled ? 'Order sound alert active' : 'Sound alert muted'}
+          >
+            <div className="flex items-center gap-2">
+              <Volume2 className="w-4 h-4" />
+              <span>Order Chime</span>
+            </div>
+            <span className="text-[10px] font-bold uppercase">{audioEnabled ? 'Active' : 'Muted'}</span>
+          </button>
+
+          {/* User Profile & Log Out */}
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#ecfeff] border border-[#a5f3fc] flex items-center justify-center text-[#0e7490] font-bold text-xs shrink-0">
+                <Store className="w-4 h-4" />
+              </div>
+              <div className="truncate">
+                <span className="text-xs font-bold text-slate-800 block truncate">
+                  Counter Operator
+                </span>
+                <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active Terminal
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+              title="Log Out of Counter"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Column */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* Premium Light Top Bar */}
+        <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 lg:hidden cursor-pointer"
+              aria-label="Open navigation sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium hidden sm:inline">Counter</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden sm:inline" />
+              <span className="text-slate-600 font-medium hidden md:inline truncate max-w-[120px]">
+                {shop.name}
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden md:inline" />
+              <h1 className="text-sm font-bold text-slate-900">
+                {activeTab === 'queue'
+                  ? 'Live Order Queue'
+                  : activeTab === 'printers'
+                  ? 'Hardware Printers & Spoolers'
+                  : activeTab === 'rates'
+                  ? 'Rates & Service Catalog'
+                  : 'Counter Standee QR'}
+              </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            {/* Audio chime toggle */}
+          <div className="flex items-center gap-2 sm:gap-2.5">
+            {/* Quick Live Status Toggle Pill */}
             <button
-              onClick={() => setAudioEnabled(!audioEnabled)}
-              className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                audioEnabled
-                  ? 'bg-cyan-50 text-[#0e7490] border-cyan-200'
-                  : 'bg-slate-100 text-slate-400 border-slate-200'
+              onClick={handleToggleOpenState}
+              className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 sm:gap-2 border transition-all cursor-pointer shadow-2xs ${
+                shop.is_open !== false
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
               }`}
-              title={audioEnabled ? 'New order audio chime active' : 'Audio chime muted'}
+              title="Click to toggle counter open / paused"
             >
-              <Volume2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{audioEnabled ? 'Chime ON' : 'Muted'}</span>
-            </button>
-
-            {/* Logout button */}
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer border border-slate-200"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Log Out</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-5xl mx-auto p-4 sm:p-5 flex flex-col space-y-4">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('queue')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'queue'
-                ? 'bg-[#0e7490] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Live Order Queue</span>
-            {queueSnapshot.activeJobs.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-cyan-400 text-slate-900 text-[10px] flex items-center justify-center font-bold">
-                {queueSnapshot.activeJobs.length}
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  shop.is_open !== false ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                }`}
+              />
+              <span className="text-[11px] sm:text-xs">
+                {shop.is_open !== false ? 'Counter Online' : 'Counter Paused'}
               </span>
-            )}
-          </button>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('printers')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'printers'
-                ? 'bg-[#0e7490] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>Printers & Spoolers</span>
-          </button>
+            {/* Today's Revenue Pill */}
+            <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700">
+              <span className="text-slate-400 font-medium">Today:</span>
+              <span className="text-emerald-700 font-extrabold">₹{Number(stats.revenueToday || 0).toFixed(0)}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-[11px] text-slate-500">Cash ₹{Number(stats.cashRevenueToday || 0).toFixed(0)}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-[11px] text-slate-500">Online ₹{Number(stats.onlineRevenueToday || 0).toFixed(0)}</span>
+            </div>
 
-          <button
-            onClick={() => setActiveTab('rates')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'rates'
-                ? 'bg-[#0e7490] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Rates & Services</span>
-          </button>
+            {/* Direct Refresh */}
+            <button
+              onClick={() => {
+                if (shop) {
+                  fetchQueue(shop.id);
+                  fetchStats(shop.id);
+                  showToast('Queue & metrics synchronized');
+                }
+              }}
+              className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors cursor-pointer"
+              title="Sync Queue & Data"
+            >
+              <RotateCw className="w-4 h-4" />
+            </button>
 
-          <button
-            onClick={() => setActiveTab('standee')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'standee'
-                ? 'bg-[#0e7490] text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <QrCode className="w-3.5 h-3.5" />
-            <span>Counter Standee QR</span>
-          </button>
-        </div>
+            {/* Quick Link to Customer Storefront */}
+            <a
+              href={
+                shop.slug
+                  ? typeof window !== 'undefined' && window.location.hostname.includes('localhost')
+                    ? `http://${shop.slug}.localhost:3000`
+                    : `https://${shop.slug}.mellod.in`
+                  : `/?shop=${shop.id}`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-[#0e7490] border border-cyan-200 text-xs font-bold transition-colors cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Customer View</span>
+            </a>
+          </div>
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
 
         {/* TAB 1: LIVE QUEUE & ORDERS */}
         {activeTab === 'queue' && (
@@ -1379,5 +1625,6 @@ export default function ShopDashboardPage() {
         )}
       </main>
     </div>
-  );
+  </div>
+);
 }

@@ -41,6 +41,8 @@ import {
   Sparkles,
   ArrowRight,
   ArrowLeft,
+  Menu,
+  ChevronRight,
 } from 'lucide-react';
 
 type AdminTab = 'analytics' | 'fleet' | 'onboard';
@@ -49,6 +51,7 @@ export default function AdminCommandCenterPage() {
   const router = useRouter();
   const [adminToken, setAdminToken] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AdminTab>('analytics');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Analytics data
   const [analytics, setAnalytics] = useState<any>(null);
@@ -308,9 +311,9 @@ export default function AdminCommandCenterPage() {
   // 1. Render Loading State while redirecting to /admin/login
   if (!adminToken) {
     return (
-      <div className="min-h-screen bg-[#0b0f19] flex flex-col items-center justify-center p-6 text-center text-slate-100">
-        <RotateCw className="w-8 h-8 text-sky-400 animate-spin mb-3" />
-        <p className="text-xs text-slate-400 font-medium">Redirecting to Super Admin Login...</p>
+      <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 text-center text-slate-800">
+        <RotateCw className="w-8 h-8 text-[#0e7490] animate-spin mb-3" />
+        <p className="text-xs text-slate-500 font-medium">Redirecting to Super Admin Login...</p>
       </div>
     );
   }
@@ -322,26 +325,197 @@ export default function AdminCommandCenterPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col antialiased">
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 bg-slate-900 text-white shadow-md">
-        <div className="max-w-6xl mx-auto px-4 h-15 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-500 to-[#0e7490] flex items-center justify-center text-white shadow-sm font-bold text-sm">
-              <Shield className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex antialiased">
+      {/* Mobile Drawer Backdrop */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-40 bg-slate-900/40 backdrop-blur-xs lg:hidden transition-opacity"
+        />
+      )}
+
+      {/* Modern Sidebar (Collapsible on mobile, fixed width on desktop) */}
+      <aside
+        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-white border-r border-slate-200/90 flex flex-col transition-transform duration-200 ease-in-out lg:static lg:translate-x-0 shadow-sm lg:shadow-none ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Sidebar Brand Header */}
+        <div className="h-16 px-6 border-b border-slate-100 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#0e7490] flex items-center justify-center text-white shadow-sm shadow-[#0e7490]/20 font-bold text-sm">
+              <Printer className="w-4 h-4" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-extrabold tracking-tight">PrintSpot Super Admin</h1>
-                <span className="text-[10px] font-bold text-cyan-300 bg-cyan-950/80 px-2 py-0.5 rounded-full border border-cyan-800">
-                  Master Control
+              <span className="text-sm font-extrabold tracking-tight text-slate-900 block leading-tight">
+                Print<span className="text-[#0e7490]">Spot</span>
+              </span>
+              <span className="text-[10px] text-[#0e7490] font-semibold leading-none">
+                Super Admin Console
+              </span>
+            </div>
+          </Link>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 lg:hidden cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Sidebar Navigation */}
+        <div className="flex-1 px-4 py-5 space-y-6 overflow-y-auto">
+          {/* Main Controls Section */}
+          <div className="space-y-1.5">
+            <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+              Platform Controls
+            </span>
+            <button
+              onClick={() => {
+                setActiveTab('analytics');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'analytics'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <TrendingUp className={`w-4 h-4 ${activeTab === 'analytics' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Analytics & Insights</span>
+              </div>
+              {activeTab === 'analytics' && <div className="w-1.5 h-1.5 rounded-full bg-[#0e7490]" />}
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('fleet');
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'fleet'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Store className={`w-4 h-4 ${activeTab === 'fleet' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Counter Fleet</span>
+              </div>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                activeTab === 'fleet' ? 'bg-[#cffafe] text-[#0e7490]' : 'bg-slate-100 text-slate-500'
+              }`}>
+                {shops.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setActiveTab('onboard');
+                setOnboardSuccessShop(null);
+                setOnboardStep(1);
+                setSidebarOpen(false);
+              }}
+              className={`w-full px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                activeTab === 'onboard'
+                  ? 'bg-[#ecfeff] text-[#0e7490] border border-[#a5f3fc] shadow-2xs font-extrabold'
+                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <Plus className={`w-4 h-4 ${activeTab === 'onboard' ? 'text-[#0e7490]' : 'text-slate-400'}`} />
+                <span>Onboard New Shop</span>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                + New
+              </span>
+            </button>
+          </div>
+
+          {/* Quick Access Portals */}
+          <div className="space-y-1.5 pt-4 border-t border-slate-100">
+            <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+              Portals & Counters
+            </span>
+            <Link
+              href="/"
+              className="w-full px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
+            >
+              <ExternalLink className="w-4 h-4 text-slate-400" />
+              <span>Customer Portal</span>
+            </Link>
+            <Link
+              href="/shop/login"
+              className="w-full px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
+            >
+              <Store className="w-4 h-4 text-slate-400" />
+              <span>Shopkeeper Login</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Sidebar Footer User Card */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-[#ecfeff] border border-[#a5f3fc] flex items-center justify-center text-[#0e7490] font-bold text-xs shrink-0">
+                <Shield className="w-4 h-4" />
+              </div>
+              <div className="truncate">
+                <span className="text-xs font-bold text-slate-800 block truncate">
+                  Master Admin
+                </span>
+                <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active Session
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">Platform Operations & Counter Fleet</p>
+            </div>
+            <button
+              onClick={handleAdminLogout}
+              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+              title="Log Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Column */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* Premium Light Top Bar */}
+        <header className="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 lg:hidden cursor-pointer"
+              aria-label="Open sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="text-slate-400 font-medium hidden sm:inline">Admin</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 hidden sm:inline" />
+              <h1 className="text-sm font-bold text-slate-900">
+                {activeTab === 'analytics'
+                  ? 'Platform Analytics & Intelligence'
+                  : activeTab === 'fleet'
+                  ? 'Counter Fleet Directory'
+                  : 'Onboard New Shop Counter'}
+              </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-2.5">
+            {/* Quick Live Status Pill */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] font-bold text-emerald-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>{analytics?.openShops || 0} Open • {shops.length} Counters</span>
+            </div>
+
+            {/* Refresh Button */}
             <button
               onClick={() => {
                 if (adminToken) {
@@ -349,67 +523,32 @@ export default function AdminCommandCenterPage() {
                   fetchFleet(adminToken);
                 }
               }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1 transition-colors"
-              title="Refresh platform stats"
+              className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+              title="Refresh Data"
             >
-              <RotateCw className="w-3.5 h-3.5" />
+              <RotateCw className={`w-3.5 h-3.5 text-[#0e7490] ${isLoadingAnalytics || isLoadingFleet ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline font-semibold">Sync</span>
             </button>
 
-            <button
-              onClick={handleAdminLogout}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-red-900/60 text-slate-300 hover:text-red-200 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-700"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Log Out</span>
-            </button>
+            {/* Quick Action Onboard */}
+            {activeTab !== 'onboard' && (
+              <button
+                onClick={() => {
+                  setActiveTab('onboard');
+                  setOnboardSuccessShop(null);
+                  setOnboardStep(1);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-[#0e7490] hover:bg-[#0891b2] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-[#0e7490]/20 transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Onboard Counter</span>
+              </button>
+            )}
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-6 flex flex-col space-y-4">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'analytics'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <TrendingUp className="w-3.5 h-3.5 text-cyan-500" />
-            <span>Platform Analytics & Intelligence</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('fleet')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'fleet'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Store className="w-3.5 h-3.5 text-cyan-500" />
-            <span>Counter Fleet Directory ({shops.length})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('onboard');
-              setOnboardSuccessShop(null);
-              setOnboardStep(1);
-            }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-              activeTab === 'onboard'
-                ? 'bg-[#0e7490] text-white shadow-sm'
-                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
-            }`}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>+ Onboard New Shop</span>
-          </button>
-        </div>
+        {/* Main Workspace Body */}
+        <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col space-y-6">
 
         {/* TAB 1: ANALYTICS & INTELLIGENCE */}
         {activeTab === 'analytics' && (
@@ -957,7 +1096,8 @@ export default function AdminCommandCenterPage() {
             )}
           </div>
         )}
-      </main>
+        </main>
+      </div>
 
       {/* Standee QR Preview Modal */}
       {selectedQrShop && (
