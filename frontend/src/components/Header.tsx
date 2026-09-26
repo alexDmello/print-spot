@@ -13,7 +13,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  shopName = 'Station Hub 3',
+  shopName = 'PrintSpot Counter',
   stepNumber = 1,
   totalSteps = 4,
   onBack,
@@ -70,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
             >
               <Printer className="w-3.5 h-3.5 text-[#0e7490]" />
-              <span>Customer Kiosk</span>
+              <span>Print Counter</span>
             </Link>
           )}
         </div>

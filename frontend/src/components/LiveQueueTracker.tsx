@@ -34,7 +34,7 @@ export const LiveQueueTracker: React.FC<LiveQueueTrackerProps> = ({
 }) => {
   const [tokenCode, setTokenCode] = useState(initialTokenCode);
   const [position, setPosition] = useState(initialPosition);
-  const [nowServing, setNowServing] = useState<string | null>('#39');
+  const [nowServing, setNowServing] = useState<string | null>(null);
   const [status, setStatus] = useState<'waiting' | 'printing' | 'ready' | 'failed' | 'picked_up'>('waiting');
   const [estimatedWait, setEstimatedWait] = useState(initialEstimatedWait || 5);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export const LiveQueueTracker: React.FC<LiveQueueTrackerProps> = ({
               Now Serving
             </span>
             <div className="text-3xl font-black text-amber-500">
-              {nowServing || '#39'}
+              {nowServing || '—'}
             </div>
           </div>
 
@@ -143,23 +143,9 @@ export const LiveQueueTracker: React.FC<LiveQueueTrackerProps> = ({
           </div>
 
           <p className="text-[11px] text-amber-900 leading-relaxed">
-            Our support technicians are resolving a paper feed issue at Station Hub 3.
+            The counter operator is attending to the printer. Your job will resume automatically.
             {errorMessage && <span className="block mt-1 font-mono text-[10px] text-red-600">{errorMessage}</span>}
           </p>
-
-          <div className="p-3 rounded-xl bg-white border border-amber-200 space-y-1">
-            <h4 className="font-bold text-slate-900 text-xs">Need immediate prints?</h4>
-            <p className="text-[11px] text-slate-500">
-              You can instantly reroute this order to Station Hub 1 to bypass this delay.
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsRerouted(true)}
-              className="mt-1.5 w-full py-2 rounded-lg bg-[#0e7490] text-white text-xs font-semibold"
-            >
-              {isRerouted ? '✓ Rerouted to Station Hub 1' : 'Reroute to Station Hub 1'}
-            </button>
-          </div>
         </div>
       )}
 
@@ -193,10 +179,10 @@ export const LiveQueueTracker: React.FC<LiveQueueTrackerProps> = ({
           <MapPin className="w-4 h-4 text-[#0e7490] shrink-0 mt-0.5" />
           <div>
             <h3 className="font-bold text-slate-900 text-xs">
-              {isRerouted ? 'Main Corridor - Station Hub 1' : 'Central Library - Station Hub 3'}
+              Verified Print Counter
             </h3>
             <p className="text-[11px] text-slate-500">
-              Ground Floor, opposite the reference desk resource center.
+              Pick up at the shop counter when your token is called.
             </p>
           </div>
         </div>

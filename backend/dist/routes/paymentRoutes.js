@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const crypto_1 = __importDefault(require("crypto"));
 const paymentService_1 = require("../services/paymentService");
+const shopAuthService_1 = require("../services/shopAuthService");
 const env_1 = require("../config/env");
 const router = (0, express_1.Router)();
 // Create Razorpay Order for a Job
@@ -84,6 +85,40 @@ router.post('/pay-at-counter', async (req, res) => {
     catch (err) {
         console.error('[Payment] Error in Pay at Counter:', err);
         res.status(500).json({ error: err.message || 'Failed to place order.' });
+    }
+});
+// Confirm Cash received at counter (Shopkeeper Auth required - Phase 4A)
+router.post('/confirm-cash', shopAuthService_1.shopAuthMiddleware, async (req, res) => {
+    try {
+        const { jobId } = req.body;
+        const shopId = req.shop?.shopId;
+        if (!jobId || !shopId) {
+            res.status(400).json({ error: 'jobId is required.' });
+            return;
+        }
+        const result = await (0, paymentService_1.confirmCashPaymentByShop)(jobId, shopId);
+        res.json({ success: true, ...result });
+    }
+    catch (err) {
+        console.error('[Payment] Error confirming cash order:', err);
+        res.status(500).json({ error: err.message || 'Failed to confirm cash payment.' });
+    }
+});
+// Decline Cash order (Shopkeeper Auth required - Phase 4A)
+router.post('/decline-cash', shopAuthService_1.shopAuthMiddleware, async (req, res) => {
+    try {
+        const { jobId, reason } = req.body;
+        const shopId = req.shop?.shopId;
+        if (!jobId || !shopId) {
+            res.status(400).json({ error: 'jobId is required.' });
+            return;
+        }
+        const result = await (0, paymentService_1.declineCashPaymentByShop)(jobId, shopId, reason);
+        res.json(result);
+    }
+    catch (err) {
+        console.error('[Payment] Error declining cash order:', err);
+        res.status(500).json({ error: err.message || 'Failed to decline cash payment.' });
     }
 });
 // Razorpay Webhook endpoint

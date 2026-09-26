@@ -831,7 +831,7 @@ export default function AdminCommandCenterPage() {
                           </label>
                           <input
                             type="text"
-                            placeholder="e.g. Vikram Malhotra"
+                            placeholder="e.g. Store Owner Name"
                             value={onboardFormData.owner_name}
                             onChange={(e) => setOnboardFormData({ ...onboardFormData, owner_name: e.target.value })}
                             className="w-full figma-input px-3 py-2 text-xs"

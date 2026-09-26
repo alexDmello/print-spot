@@ -22,12 +22,51 @@ export interface PrintJobOptions {
   simulate?: boolean;
 }
 
+export const VIRTUAL_DRIVER_BLACKLIST = [
+  'microsoft print to pdf',
+  'microsoft xps document writer',
+  'onenote',
+  'send to microsoft onenote',
+  'fax',
+  'microsoft shared fax driver',
+  'microsoft software printer driver',
+  'cutepdf',
+  'acrobat distiller',
+  'adobe pdf',
+  'foxit reader pdf printer',
+  'bullzip pdf',
+  'pdfcreator',
+  'cute pdf',
+];
+
+export const VIRTUAL_PORT_BLACKLIST = [
+  'portprompt:',
+  'nul:',
+  'shrfax:',
+];
+
+export function isVirtualPrinter(name?: string, driver?: string, port?: string): boolean {
+  const n = (name || '').toLowerCase();
+  const d = (driver || '').toLowerCase();
+  const p = (port || '').toLowerCase();
+
+  if (VIRTUAL_DRIVER_BLACKLIST.some(b => n.includes(b) || d.includes(b))) {
+    return true;
+  }
+
+  if (VIRTUAL_PORT_BLACKLIST.some(bp => p.includes(bp)) || p.includes('onenote')) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
- * Detects local Windows printers using PowerShell
+ * Detects local physical Windows printers using PowerShell (filtering out virtual drivers)
  */
 export async function getWindowsPrinters(): Promise<DetectedPrinter[]> {
   try {
-    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PrinterStatus | ConvertTo-Json"`;
+    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
     const { stdout } = await execAsync(cmd);
     if (!stdout.trim()) return [];
 
@@ -40,7 +79,10 @@ export async function getWindowsPrinters(): Promise<DetectedPrinter[]> {
 
     const list = Array.isArray(parsed) ? parsed : [parsed];
 
-    return list.map((p: any, idx: number) => {
+    // Filter out virtual printers (PDF writers, OneNote, Fax, etc.)
+    const physicalList = list.filter((p: any) => !isVirtualPrinter(p.Name, p.DriverName, p.PortName));
+
+    return physicalList.map((p: any, idx: number) => {
       const name = p.Name || `Printer-${idx + 1}`;
       const nameLower = name.toLowerCase();
       const isColor = nameLower.includes('color') || nameLower.includes('c3530') || nameLower.includes('deskjet');

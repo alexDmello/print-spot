@@ -32,8 +32,8 @@ VALUES (
   'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007',
   28.6912,
   77.2089,
-  'Vikram Malhotra',
-  '9876543210',
+  'Shop Owner',
+  '0000000000',
   'hub@printspot.in',
   '1234',
   '08:00 AM',
@@ -47,12 +47,7 @@ VALUES (
 )
 ON CONFLICT (id) DO UPDATE SET slug = EXCLUDED.slug WHERE shops.slug IS NULL;
 
--- 3. Default Hardware Printers for shop_main
-INSERT INTO printers (id, shop_id, name, type, status, system_name)
-VALUES 
-  ('printer_mono_1', 'shop_main', 'HP LaserJet Pro M404n (High Speed Mono)', 'mono', 'online', 'Microsoft Print to PDF'),
-  ('printer_color_1', 'shop_main', 'Canon imageRUNNER ADVANCE C3530i (Color HD)', 'color', 'online', 'Microsoft Print to PDF')
-ON CONFLICT (id) DO NOTHING;
+-- 3. Hardware Printers: Dynamic / local detection only (No static fake seed printers)
 
 -- 4. Default Catalog Services for shop_main
 INSERT INTO shop_services (id, shop_id, name, description, category, price, unit, enabled, is_default)

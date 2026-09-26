@@ -11,6 +11,7 @@ const db_1 = require("../db");
 const queueEngine_1 = require("../redis/queueEngine");
 const socketHandler_1 = require("../socket/socketHandler");
 const shopAuthService_1 = require("../services/shopAuthService");
+const printerFilter_1 = require("../utils/printerFilter");
 const execAsync = util_1.default.promisify(child_process_1.exec);
 const router = (0, express_1.Router)();
 // Helper to fetch full shop details (supports both ID and Subdomain Slug)
@@ -108,6 +109,27 @@ router.get('/:id/public', async (req, res) => {
     catch (err) {
         console.error('[Shop Public] Error:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+// Liveness & Counter Availability Check (Phase 2B)
+router.get('/:id/availability', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const shop = await getShopWithDetails(id);
+        if (!shop)
+            return res.status(404).json({ available: false, reason: 'Shop not found.' });
+        if (!shop.is_active)
+            return res.json({ available: false, reason: 'This print counter is currently deactivated.' });
+        if (!shop.is_open)
+            return res.json({ available: false, reason: 'This print counter is currently closed.' });
+        const live = (0, socketHandler_1.isShopLive)(shop.id);
+        if (!live)
+            return res.json({ available: false, reason: 'Counter station is currently offline. Connect physical printer and keep counter dashboard open.' });
+        return res.json({ available: true, shopName: shop.name });
+    }
+    catch (err) {
+        console.error('[Shop Availability] Error checking shop availability:', err);
+        res.status(500).json({ available: false, error: err.message });
     }
 });
 // Toggle Shop Open / Paused State
@@ -267,15 +289,37 @@ router.get('/:id/stats', async (req, res) => {
        FROM print_jobs 
        WHERE shop_id = $1 AND status IN ('waiting', 'printing', 'failed')`, [id]);
         const printersRes = await (0, db_1.query)(`SELECT id, name, type, status, system_name FROM printers WHERE shop_id = $1`, [id]);
+        const revenueBreakdown = await (0, db_1.query)(`SELECT 
+         COALESCE(SUM(CASE WHEN payment_method IN ('counter_cash') THEN price ELSE 0 END), 0) as cash_revenue,
+         COALESCE(SUM(CASE WHEN payment_method NOT IN ('counter_cash') THEN price ELSE 0 END), 0) as online_revenue,
+         COALESCE(SUM(platform_fee), 0) as platform_fees_today
+       FROM print_jobs 
+       WHERE shop_id = $1 
+         AND status IN ('ready', 'picked_up', 'waiting', 'printing') 
+         AND (completed_at >= CURRENT_DATE OR created_at >= CURRENT_DATE)`, [id]);
+        const shopRes = await (0, db_1.query)('SELECT unsettled_cash_fee FROM shops WHERE id = $1', [id]);
+        const unsettledCashFee = parseFloat(shopRes.rows[0]?.unsettled_cash_fee || '0');
         const stats = todayStats.rows[0] || {};
         const qStats = queueStats.rows[0] || {};
+        const rev = revenueBreakdown.rows[0] || {};
+        const cashRev = parseFloat(rev.cash_revenue || '0');
+        const onlineRev = parseFloat(rev.online_revenue || '0');
+        const totalRev = parseFloat(stats.total_revenue || '0') || (cashRev + onlineRev);
+        const platformFeesToday = parseFloat(rev.platform_fees_today || '0');
+        const shopNetPayoutToday = Math.max(0, totalRev - platformFeesToday);
         res.json({
             completedJobsToday: parseInt(stats.completed_count || '0', 10),
-            revenueToday: parseFloat(stats.total_revenue || '0'),
+            revenueToday: totalRev,
             pagesPrintedToday: parseInt(stats.total_sheets || '0', 10),
             waitingJobs: parseInt(qStats.waiting_count || '0', 10),
             printingJobs: parseInt(qStats.printing_count || '0', 10),
             failedJobs: parseInt(qStats.failed_count || '0', 10),
+            cashRevenueToday: cashRev,
+            onlineRevenueToday: onlineRev,
+            totalRevenueToday: totalRev,
+            platformFeesToday: platformFeesToday,
+            unsettledCashFee: unsettledCashFee,
+            shopNetPayoutToday: shopNetPayoutToday,
             printers: printersRes.rows,
         });
     }
@@ -424,15 +468,17 @@ router.get('/:id/printers/system-hardware', async (req, res) => {
         let systemPrinters = [];
         if (isWindows) {
             try {
-                const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PrinterStatus | ConvertTo-Json"`;
+                const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
                 const { stdout } = await execAsync(cmd);
                 if (stdout && stdout.trim()) {
                     const parsed = JSON.parse(stdout);
                     const list = Array.isArray(parsed) ? parsed : [parsed];
-                    systemPrinters = list.map((p) => ({
+                    const physicalList = list.filter((p) => !(0, printerFilter_1.isVirtualPrinter)(p.Name, p.DriverName, p.PortName));
+                    systemPrinters = physicalList.map((p) => ({
                         name: p.Name || 'Unknown Device',
                         system_name: p.Name || 'Unknown Device',
                         driver: p.DriverName || 'System Spooler Driver',
+                        port: p.PortName || '',
                         status: p.PrinterStatus && p.PrinterStatus.toString().toLowerCase().includes('offline') ? 'offline' : 'online',
                     }));
                 }
@@ -449,12 +495,16 @@ router.get('/:id/printers/system-hardware', async (req, res) => {
                 for (const line of lines) {
                     const match = line.match(/^printer (\S+)/);
                     if (match) {
-                        systemPrinters.push({
-                            name: match[1],
-                            system_name: match[1],
-                            driver: 'CUPS Native Driver',
-                            status: 'online',
-                        });
+                        const name = match[1];
+                        if (!(0, printerFilter_1.isVirtualPrinter)(name)) {
+                            systemPrinters.push({
+                                name,
+                                system_name: name,
+                                driver: 'CUPS Native Driver',
+                                port: 'cups',
+                                status: 'online',
+                            });
+                        }
                     }
                 }
             }
@@ -462,17 +512,11 @@ router.get('/:id/printers/system-hardware', async (req, res) => {
                 console.warn('[System Printer Detection] lpstat failed:', lpErr);
             }
         }
-        // Default virtual fallbacks if none detected
-        if (systemPrinters.length === 0) {
-            systemPrinters = [
-                { name: 'Microsoft Print to PDF', system_name: 'Microsoft Print to PDF', driver: 'PDF Virtual Spooler', status: 'online' },
-                { name: 'OneNote for Windows 10', system_name: 'OneNote for Windows 10', driver: 'OneNote Driver', status: 'online' },
-            ];
-        }
         res.json({
             success: true,
             platform: process.platform,
             printers: systemPrinters,
+            message: systemPrinters.length === 0 ? 'No physical printers detected.' : undefined,
         });
     }
     catch (err) {

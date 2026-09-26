@@ -641,6 +641,19 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                     iconBgClass="bg-purple-100 text-purple-700"
                   />
 
+                  {/* 2b. Page Scaling Dropdown */}
+                  <DropdownRow
+                    label="Page Scaling"
+                    value={imageFiles[0]?.pageFit || 'fit'}
+                    onChange={(val) => updatePhotoSheetSetting({ pageFit: val as 'fit' | 'fill' })}
+                    options={[
+                      { value: 'fit', label: 'Fit to Page (With Margins)' },
+                      { value: 'fill', label: 'Fill Entire Page (Poster / Borderless)' },
+                    ]}
+                    icon={<Layers className="w-3.5 h-3.5 text-purple-700" />}
+                    iconBgClass="bg-purple-100 text-purple-700"
+                  />
+
                   {/* 3. Print Mode Dropdown */}
                   <DropdownRow
                     label="Print Mode"
@@ -806,6 +819,18 @@ export const PrintSettings: React.FC<PrintSettingsProps> = ({
                       { value: 4, label: '4 in 1' },
                       { value: 6, label: '6 in 1' },
                       { value: 9, label: '9 in 1' },
+                    ]}
+                    icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
+                  />
+
+                  {/* 4b. Page Scaling Dropdown */}
+                  <DropdownRow
+                    label="Page Scaling"
+                    value={item.pageFit || 'fit'}
+                    onChange={(val) => updateFileSetting(item.id, { pageFit: val as 'fit' | 'fill' })}
+                    options={[
+                      { value: 'fit', label: 'Fit to Page (With Margins)' },
+                      { value: 'fill', label: 'Fill Entire Page (Poster / Borderless)' },
                     ]}
                     icon={<Layers className="w-3.5 h-3.5 text-[#0e7490]" />}
                   />

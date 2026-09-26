@@ -52,8 +52,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [authError, setAuthError] = useState<string | null>(null);
 
   // Promo code state
-  const [promoCode, setPromoCode] = useState('SAVE15');
-  const [promoApplied, setPromoApplied] = useState(true);
+  const [promoCode, setPromoCode] = useState('');
+  const [promoApplied, setPromoApplied] = useState(false);
 
   // Payment method
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'counter_cash'>('upi');
@@ -473,15 +473,40 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <input
               type="text"
               value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value)}
+              onChange={(e) => {
+                setPromoCode(e.target.value);
+                if (promoApplied) setPromoApplied(false);
+              }}
               placeholder="Promo Code"
               className="bg-transparent text-slate-900 font-bold focus:outline-none w-full uppercase text-xs"
             />
           </div>
-          {promoApplied && (
-            <span className="text-[11px] font-bold text-[#0e7490] bg-[#ecfeff] px-2.5 py-2 rounded-xl border border-[#a5f3fc]">
-              Applied (-₹{discount})
-            </span>
+          {promoApplied ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPromoCode('');
+                setPromoApplied(false);
+              }}
+              className="text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 px-2.5 py-2 rounded-xl border border-red-200 cursor-pointer"
+            >
+              Remove (-₹{discount})
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!promoCode.trim()}
+              onClick={() => {
+                if (promoCode.trim().toUpperCase() === 'SAVE15') {
+                  setPromoApplied(true);
+                } else if (promoCode.trim().length > 0) {
+                  alert('Invalid promo code');
+                }
+              }}
+              className="text-[11px] font-bold text-[#0e7490] bg-[#ecfeff] hover:bg-[#cffafe] disabled:opacity-50 disabled:cursor-not-allowed px-3 py-2 rounded-xl border border-[#a5f3fc] cursor-pointer"
+            >
+              Apply
+            </button>
           )}
         </div>
       </div>

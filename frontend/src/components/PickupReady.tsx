@@ -75,10 +75,10 @@ export const PickupReady: React.FC<PickupReadyProps> = ({
 
         <div className="space-y-1">
           <h2 className="text-lg font-black text-slate-900">
-            Ready at Hub 3!
+            Ready at {shopName || 'Print Counter'}!
           </h2>
           <p className="text-xs text-slate-600 leading-relaxed px-2">
-            Your print job has been printed, verified, and placed safely into the output tray.
+            Your print job has been printed, verified, and placed safely on the pickup counter.
           </p>
         </div>
       </div>
@@ -86,7 +86,7 @@ export const PickupReady: React.FC<PickupReadyProps> = ({
       {/* 2. QR Code to Release Card */}
       <div className="figma-card p-5 space-y-3">
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-          Scan Kiosk QR Code to Release
+          Show QR Code or PIN at Counter
         </span>
 
         {/* QR Code Container */}
@@ -110,9 +110,9 @@ export const PickupReady: React.FC<PickupReadyProps> = ({
           Pickup Instructions
         </span>
         <ol className="text-xs text-slate-600 space-y-1.5 list-decimal list-inside leading-relaxed">
-          <li>Walk up to Station Hub 3.</li>
-          <li>Scan this QR code or type <strong className="text-slate-900">{pickupCode}</strong> on the screen.</li>
-          <li>Collect your sheets from slot B.</li>
+          <li>Walk up to the print counter at <strong className="text-slate-900">{shopName || 'the shop'}</strong>.</li>
+          <li>Show this QR code or tell the operator your pickup PIN (<strong className="text-slate-900">{pickupCode}</strong>).</li>
+          <li>Collect your completed prints!</li>
         </ol>
       </div>
 
@@ -124,9 +124,9 @@ export const PickupReady: React.FC<PickupReadyProps> = ({
 
       {/* Sticky Bottom CTA */}
       <MobileBottomCta
-        label={isConfirmedPickedUp ? "Order Finished" : "Secure Station"}
-        value={isConfirmedPickedUp ? "Shredded" : "Station 3"}
-        buttonText={isConfirmedPickedUp ? "Print Another" : "Release Now"}
+        label={isConfirmedPickedUp ? "Order Finished" : "Print Counter"}
+        value={isConfirmedPickedUp ? "Completed" : (shopName || "Active Counter")}
+        buttonText={isConfirmedPickedUp ? "Print Another" : "Mark Collected"}
         isLoading={isProcessing}
         onButtonClick={isConfirmedPickedUp ? onReset : handleConfirmPickup}
       />

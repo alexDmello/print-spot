@@ -8,6 +8,25 @@ import { assignPrintersToJob } from '../services/printerRoutingService';
 
 let io: Server | null = null;
 
+interface ShopLiveEntry {
+  socketId: string;
+  lastPing: number;
+  hasPrinters: boolean;
+  connectedPrinterCount: number;
+  graceTimer?: NodeJS.Timeout;
+}
+
+const shopLiveStatus = new Map<string, ShopLiveEntry>();
+
+/**
+ * Checks whether a shop has an active dashboard connection with physical printers
+ */
+export function isShopLive(shopId: string): boolean {
+  const entry = shopLiveStatus.get(shopId);
+  if (!entry) return false;
+  return Date.now() - entry.lastPing < 25000 && entry.hasPrinters;
+}
+
 export function initSocketServer(httpServer: HttpServer): Server {
   io = new Server(httpServer, {
     cors: {
@@ -51,6 +70,12 @@ export function initSocketServer(httpServer: HttpServer): Server {
       }
     });
 
+    // Support join_shop shorthand
+    socket.on('join_shop', (shopId: string) => {
+      if (!shopId) return;
+      socket.join(`shop:${shopId}`);
+    });
+
     // Shop Admin subscribes to shop updates
     socket.on('subscribe_shop', async (data: { shopId: string }) => {
       if (!data || !data.shopId) return;
@@ -67,6 +92,51 @@ export function initSocketServer(httpServer: HttpServer): Server {
       } catch (err) {
         console.error('[Socket] Error sending initial shop data:', err);
       }
+    });
+
+    // Shop Admin heartbeat (Phase 2A)
+    socket.on('shop_heartbeat', (data: { shopId: string; connectedPrinterCount: number }) => {
+      if (!data?.shopId) return;
+      const existing = shopLiveStatus.get(data.shopId);
+      if (existing?.graceTimer) {
+        clearTimeout(existing.graceTimer);
+      }
+      shopLiveStatus.set(data.shopId, {
+        socketId: socket.id,
+        lastPing: Date.now(),
+        hasPrinters: (data.connectedPrinterCount || 0) > 0,
+        connectedPrinterCount: data.connectedPrinterCount || 0,
+      });
+    });
+
+    // ==========================================
+    // 🚀 Ephemeral Socket Relay Fallback (Zero Disk Storage - Phase 3A)
+    // ==========================================
+    socket.on('relay_file_chunk', (data: {
+      shopId: string;
+      jobId: string;
+      chunkIndex: number;
+      totalChunks: number;
+      data: any;
+      metadata: { fileName: string; fileSize: number; mimeType: string };
+    }) => {
+      if (!data?.shopId || !data?.jobId) return;
+      socket.to(`shop:${data.shopId}`).emit('relay_file_chunk_received', {
+        fromSocketId: socket.id,
+        jobId: data.jobId,
+        chunkIndex: data.chunkIndex,
+        totalChunks: data.totalChunks,
+        data: data.data,
+        metadata: data.metadata,
+      });
+    });
+
+    socket.on('relay_file_complete', (data: { shopId: string; jobId: string }) => {
+      if (!data?.shopId || !data?.jobId) return;
+      socket.to(`shop:${data.shopId}`).emit('relay_file_complete', {
+        fromSocketId: socket.id,
+        jobId: data.jobId,
+      });
     });
 
     // ==========================================
@@ -237,7 +307,26 @@ export function initSocketServer(httpServer: HttpServer): Server {
     });
 
     socket.on('disconnect', () => {
-      // Clean disconnect
+      for (const [shopId, entry] of shopLiveStatus.entries()) {
+        if (entry.socketId === socket.id) {
+          if (entry.graceTimer) clearTimeout(entry.graceTimer);
+          entry.graceTimer = setTimeout(async () => {
+            const current = shopLiveStatus.get(shopId);
+            if (current && current.socketId === socket.id) {
+              shopLiveStatus.delete(shopId);
+              console.log(`[Shop Liveness] Shop ${shopId} disconnected for > 30s. Setting is_open = false`);
+              try {
+                await query(`UPDATE shops SET is_open = false WHERE id = $1`, [shopId]);
+                io?.to(`shop:${shopId}`).emit('shop_open_status_changed', { isOpen: false });
+                io?.emit('shop_updated', { id: shopId, is_open: false });
+              } catch (e) {
+                console.error('[Shop Liveness] Error setting is_open = false on disconnect:', e);
+              }
+            }
+          }, 30000);
+          break;
+        }
+      }
     });
   });
 

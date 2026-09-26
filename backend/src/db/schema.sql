@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS shops (
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_slug ON shops(slug);
 
+-- Platform fee ledger tracking
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS unsettled_cash_fee NUMERIC DEFAULT 0.00;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS total_platform_fees_settled NUMERIC DEFAULT 0.00;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_pending_cash_fee NUMERIC DEFAULT 200.00;
+
 -- 3. Super Admin Users Table
 CREATE TABLE IF NOT EXISTS admin_users (
   id TEXT PRIMARY KEY,
@@ -104,8 +109,13 @@ CREATE TABLE IF NOT EXISTS print_jobs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   completed_at TIMESTAMP,
   picked_up_at TIMESTAMP,
-  printed_at TIMESTAMP
+  printed_at TIMESTAMP,
+  platform_fee NUMERIC DEFAULT 0.00,
+  shop_payout NUMERIC DEFAULT 0.00
 );
+
+ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS platform_fee NUMERIC DEFAULT 0.00;
+ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS shop_payout NUMERIC DEFAULT 0.00;
 
 -- 7. Live Queue Entries (FIFO Engine)
 CREATE TABLE IF NOT EXISTS queue_entries (

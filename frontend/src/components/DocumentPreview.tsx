@@ -20,6 +20,7 @@ interface DocumentPreviewProps {
   onProceed: () => void;
   onGridChange?: (fileId: string, grid: 1 | 2 | 4 | 6 | 9) => void;
   onOrientationChange?: (fileId: string, orientation: 'portrait' | 'landscape') => void;
+  onPageFitChange?: (fileId: string, pageFit: 'fit' | 'fill') => void;
 }
 
 export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
@@ -28,6 +29,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   onProceed,
   onGridChange,
   onOrientationChange,
+  onPageFitChange,
 }) => {
   const isImageFile = (f: UploadedDocument) => {
     const fileExt = (f.fileName.split('.').pop() || '').toLowerCase();
@@ -114,6 +116,7 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
   // Color mode detection for Photo Sheet vs standalone document
   const isPhotoSheetColor = imageFiles.some((f) => f.color !== false);
   const isCurrentItemColor = isPreviewingPhotoSheet ? isPhotoSheetColor : !!activeFile?.color;
+  const currentFit: 'fit' | 'fill' = (isPreviewingPhotoSheet ? imageFiles[0]?.pageFit : activeFile?.pageFit) || 'fit';
 
   // Proportional grid layouts on A4 paper sheet adapting to Portrait vs Landscape
   const getGridClass = (grid: number, orientation: 'portrait' | 'landscape') => {
@@ -466,6 +469,36 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
               </button>
             </div>
           )}
+
+          {/* Image & Photo Sheet PageFit Scaling Switcher */}
+          {(isImage || isPreviewingPhotoSheet) && onPageFitChange && (
+            <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md">
+              <button
+                type="button"
+                onClick={() => onPageFitChange(activeFile.id, 'fit')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  currentFit === 'fit'
+                    ? 'bg-white text-[#0e7490] shadow-2xs font-extrabold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Fit to page with standard printable margins"
+              >
+                Fit Margin
+              </button>
+              <button
+                type="button"
+                onClick={() => onPageFitChange(activeFile.id, 'fill')}
+                className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                  currentFit === 'fill'
+                    ? 'bg-white text-purple-700 shadow-2xs font-extrabold'
+                    : 'text-slate-500 hover:text-slate-800'
+                }`}
+                title="Fill entire page borderless for posters and photos"
+              >
+                Fill Page (Poster)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* PHYSICAL A4 PAPER SHEET CONTAINER (Adapts to Portrait 210x297 mm or Landscape 297x210 mm) */}
@@ -491,7 +524,11 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
             }}
             className={`w-full ${
               orientation === 'landscape' ? 'max-w-[420px] sm:max-w-[460px]' : 'max-w-[340px] sm:max-w-[365px]'
-            } bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 p-2 sm:p-2.5 transition-all relative flex flex-col justify-between select-none overflow-hidden`}
+            } bg-white rounded-none border border-slate-300 shadow-xl shadow-slate-900/10 ${
+              currentFit === 'fill' && currentGrid === 1 && (isImage || isPreviewingPhotoSheet)
+                ? 'p-0'
+                : 'p-2 sm:p-2.5'
+            } transition-all relative flex flex-col justify-between select-none overflow-hidden`}
           >
             {/* 1. PDF DOCUMENT RENDERING */}
             {isPdf && (
@@ -587,17 +624,24 @@ export const DocumentPreview: React.FC<DocumentPreviewProps> = ({
 
                       if (currentImg) {
                         const imgUrl = getResolvedUrl(currentImg.fileUrl);
+                        const imgFit = currentImg.pageFit || currentFit;
                         return (
                           <div
                             key={idx}
-                            className="bg-white flex items-center justify-center p-0.5 overflow-hidden h-full w-full relative"
+                            className={`bg-white flex items-center justify-center ${
+                              imgFit === 'fill' ? 'p-0' : 'p-0.5'
+                            } overflow-hidden h-full w-full relative`}
                           >
                             {/* Clean image display with zero text overlay */}
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={imgUrl}
                               alt=""
-                              className="max-h-full max-w-full object-contain select-none"
+                              className={`select-none ${
+                                imgFit === 'fill'
+                                  ? 'w-full h-full object-cover'
+                                  : 'max-h-full max-w-full object-contain'
+                              }`}
                             />
                           </div>
                         );

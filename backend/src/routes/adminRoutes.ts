@@ -4,6 +4,7 @@ import { query } from '../db';
 import { loginAdmin, adminAuthMiddleware } from '../services/shopAuthService';
 import { hashPassword } from '../utils/security';
 import { getSocketServer } from '../socket/socketHandler';
+import { allocateUniqueSlug, sanitizeSlug } from '../utils/slugAllocator';
 
 const router = Router();
 
@@ -155,7 +156,7 @@ router.get('/shops', adminAuthMiddleware, async (_req: Request, res: Response) =
   }
 });
 
-// Check if a custom subdomain slug is available
+// Check if a custom subdomain slug is available (Phase 6B)
 router.get('/check-slug', async (req: Request, res: Response) => {
   try {
     const rawSlug = (req.query.slug as string || '').toLowerCase().trim();
@@ -164,21 +165,25 @@ router.get('/check-slug', async (req: Request, res: Response) => {
       return;
     }
 
-    const cleanSlug = rawSlug.replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
-    const RESERVED = ['admin', 'api', 'www', 'app', 'mail', 'shop', 'status', 'portal', 'root', 'help', 'static', 'auth'];
+    const cleanSlug = sanitizeSlug(rawSlug);
+    const allocation = await allocateUniqueSlug(cleanSlug, cleanSlug);
 
-    if (RESERVED.includes(cleanSlug)) {
-      res.json({ available: false, slug: cleanSlug, reason: `'${cleanSlug}' is a reserved system subdomain.` });
+    if (!allocation.isOriginalAvailable) {
+      res.json({
+        available: false,
+        slug: cleanSlug,
+        reason: `'${cleanSlug}.mellod.in' is unavailable or reserved.`,
+        recommendedSlug: allocation.slug,
+        suggestions: allocation.suggestions,
+      });
       return;
     }
 
-    const existing = await query('SELECT id FROM shops WHERE slug = $1', [cleanSlug]);
-    if (existing.rowCount > 0) {
-      res.json({ available: false, slug: cleanSlug, reason: `'${cleanSlug}.mellod.in' is already registered.` });
-      return;
-    }
-
-    res.json({ available: true, slug: cleanSlug });
+    res.json({
+      available: true,
+      slug: cleanSlug,
+      suggestions: allocation.suggestions,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -221,29 +226,12 @@ router.post('/shops', adminAuthMiddleware, async (req: Request, res: Response) =
       return;
     }
 
-    // Determine & validate custom subdomain slug
-    let finalSlug = (customSlug || '')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9-]/g, '')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
-
-    if (!finalSlug) {
-      finalSlug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
-    }
-
-    const RESERVED = ['admin', 'api', 'www', 'app', 'mail', 'shop', 'status', 'portal', 'root', 'help', 'static', 'auth'];
-    if (RESERVED.includes(finalSlug)) {
-      res.status(400).json({ error: `The subdomain '${finalSlug}' is a reserved system keyword. Please choose another slug.` });
-      return;
-    }
-
-    const slugCheck = await query('SELECT id FROM shops WHERE slug = $1', [finalSlug]);
-    if (slugCheck.rowCount > 0) {
-      res.status(400).json({ error: `The counter subdomain '${finalSlug}.mellod.in' is already taken.` });
-      return;
-    }
+    // Determine & validate custom subdomain slug using Smart Allocator (Phase 6B)
+    const allocation = await allocateUniqueSlug(name, customSlug);
+    const finalSlug = allocation.slug;
+    const slugNotice = !allocation.isOriginalAvailable && customSlug
+      ? `'${customSlug}' was taken. Your counter was registered as '${finalSlug}'.`
+      : undefined;
 
     // Generate unique shop ID
     const shopId = `shop_${finalSlug.replace(/-/g, '_').slice(0, 16)}_${Math.random().toString(36).substring(2, 7)}`;

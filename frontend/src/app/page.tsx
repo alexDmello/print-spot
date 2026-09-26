@@ -32,11 +32,19 @@ export default function CustomerApp() {
 
   // Job & Payment state
   const [jobId, setJobId] = useState<string | null>(null);
-  const [tokenCode, setTokenCode] = useState<string>('#42');
-  const [tokenNumber, setTokenNumber] = useState<number>(42);
-  const [queuePosition, setQueuePosition] = useState<number>(2);
-  const [estimatedWait, setEstimatedWait] = useState<number>(8);
-  const [pickupCode, setPickupCode] = useState<string>('8402');
+  const [tokenCode, setTokenCode] = useState<string>('');
+  const [tokenNumber, setTokenNumber] = useState<number>(0);
+  const [queuePosition, setQueuePosition] = useState<number>(1);
+  const [estimatedWait, setEstimatedWait] = useState<number>(0);
+  const [pickupCode, setPickupCode] = useState<string>('');
+
+  // Cash payment confirmation pending state (Phase 4B)
+  const [isAwaitingCashConfirm, setIsAwaitingCashConfirm] = useState<boolean>(false);
+  const [cashPendingPrice, setCashPendingPrice] = useState<number>(0);
+
+  // Counter Availability State (Phase 2C)
+  const [isCounterLive, setIsCounterLive] = useState<boolean | null>(null);
+  const [connectedPrinterCount, setConnectedPrinterCount] = useState<number>(0);
 
   useEffect(() => {
     fetchShops();
@@ -65,6 +73,98 @@ export default function CustomerApp() {
       socket.off('shop_open_status_changed', handleOpenStatus);
     };
   }, []);
+
+  const checkCounterAvailability = async (shopId: string) => {
+    try {
+      const res = await fetch(`/api/shops/${shopId}/availability`);
+      if (res.ok) {
+        const data = await res.json();
+        setIsCounterLive(data.isLive && data.isOpen);
+        setConnectedPrinterCount(data.connectedPrinterCount || 0);
+        return data;
+      }
+    } catch (err) {
+      console.warn('Availability check failed:', err);
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (selectedShop?.id) {
+      checkCounterAvailability(selectedShop.id);
+      const timer = setInterval(() => {
+        checkCounterAvailability(selectedShop.id);
+      }, 15000);
+      return () => clearInterval(timer);
+    }
+  }, [selectedShop?.id]);
+
+  // Subscribe to Job Room & listen for shopkeeper cash confirmation (Phase 4B)
+  useEffect(() => {
+    if (!jobId) return;
+    const socket = getSocket();
+    socket.emit('subscribe_job', { jobId });
+
+    const handlePaymentConfirmed = (data: any) => {
+      if (data.jobId === jobId) {
+        setIsAwaitingCashConfirm(false);
+        setTokenCode(data.tokenCode || '');
+        setTokenNumber(data.tokenNumber || 0);
+        setQueuePosition(data.position || 1);
+        setPickupCode(data.pickupCode || '');
+        setEstimatedWait(data.estimatedWaitMinutes || 2);
+        setStep(5);
+
+        // Positive chime
+        try {
+          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.35);
+        } catch {
+          // Ignored
+        }
+
+        if (typeof window !== 'undefined' && selectedShop) {
+          localStorage.setItem(
+            `printspot_active_order_${selectedShop.id}`,
+            JSON.stringify({
+              jobId: data.jobId || jobId,
+              tokenCode: data.tokenCode,
+              tokenNumber: data.tokenNumber,
+              queuePosition: data.position,
+              pickupCode: data.pickupCode,
+              estimatedWait: data.estimatedWaitMinutes,
+              step: 5,
+            })
+          );
+        }
+      }
+    };
+
+    const handleCashDeclined = (data: any) => {
+      if (data.jobId === jobId) {
+        setIsAwaitingCashConfirm(false);
+        alert(data.reason || 'Cash payment was declined at counter.');
+      }
+    };
+
+    socket.on('payment_confirmed', handlePaymentConfirmed);
+    socket.on('cash_order_declined', handleCashDeclined);
+
+    return () => {
+      socket.off('payment_confirmed', handlePaymentConfirmed);
+      socket.off('cash_order_declined', handleCashDeclined);
+    };
+  }, [jobId, selectedShop]);
 
   const fetchShops = async () => {
     try {
@@ -380,7 +480,7 @@ export default function CustomerApp() {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex flex-col items-center justify-center p-6 text-center">
         <RotateCw className="w-8 h-8 text-[#0e7490] animate-spin mb-3" />
-        <p className="text-xs text-slate-500 font-medium">Connecting to PrintSpot Kiosk...</p>
+        <p className="text-xs text-slate-500 font-medium">Connecting to PrintSpot...</p>
       </div>
     );
   }
@@ -412,8 +512,19 @@ export default function CustomerApp() {
         {/* STEP 1: UNIFIED SHOP DETAILS & DIRECT DOCUMENT UPLOAD */}
         {step === 1 && (
           <div className="space-y-4">
+            {/* Offline Counter Warning (Phase 2C) */}
+            {isCounterLive === false && (
+              <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-900 flex items-start gap-2.5 text-xs shadow-2xs">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Print Counter Offline</span>
+                  <span>This counter is currently not connected to the print network or has no active physical printers. Please ask the shopkeeper to check their connection.</span>
+                </div>
+              </div>
+            )}
+
             {/* Paused Counter Warning */}
-            {selectedShop.is_open === false && (
+            {selectedShop.is_open === false && isCounterLive !== false && (
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2.5 text-xs shadow-2xs">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
@@ -431,14 +542,14 @@ export default function CustomerApp() {
                     <span className="text-[10px] font-bold text-white bg-[#0e7490] px-2 py-0.5 rounded-full uppercase tracking-wider">
                       Verified Counter
                     </span>
-                    {selectedShop.is_open !== false ? (
+                    {selectedShop.is_open !== false && isCounterLive !== false ? (
                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                         Counter Open
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-full">
-                        Counter Paused
+                        {isCounterLive === false ? 'Counter Offline' : 'Counter Paused'}
                       </span>
                     )}
                   </div>
@@ -475,7 +586,12 @@ export default function CustomerApp() {
             <FileUpload
               uploadedFiles={files}
               basePrice={Number(selectedShop.price_per_bw) || 2}
-              onSuccess={(uploadedDocs) => {
+              onSuccess={async (uploadedDocs) => {
+                const avail = await checkCounterAvailability(selectedShop.id);
+                if (avail && (!avail.isLive || !avail.isOpen)) {
+                  alert('This print counter is currently offline or paused. Please check with the operator.');
+                  return;
+                }
                 setFiles(uploadedDocs);
                 setStep(2);
               }}
@@ -527,49 +643,96 @@ export default function CustomerApp() {
                 )
               )
             }
+            onPageFitChange={(fileId, fit) =>
+              setFiles((prev) =>
+                prev.map((f) =>
+                  f.id === fileId || (f.combineImages && prev.find((p) => p.id === fileId)?.combineImages)
+                    ? { ...f, pageFit: fit }
+                    : f
+                )
+              )
+            }
             onProceed={() => setStep(4)}
           />
         )}
 
         {/* STEP 4: CHECKOUT & PAYMENT */}
         {step === 4 && files.length > 0 && (
-          <CheckoutModal
-            files={files}
-            selectedServiceIds={selectedServiceIds}
-            shop={selectedShop}
-            user={user}
-            onUserAuthenticated={(u, token) => {
-              setUser(u);
-              setAuthToken(token);
-            }}
-            jobId={jobId}
-            createJob={handleCreateJob}
-            onPaymentSuccess={(data) => {
-              setTokenCode(data.tokenCode || '#42');
-              setTokenNumber(data.tokenNumber || 42);
-              setQueuePosition(data.position || 2);
-              setPickupCode(data.pickupCode || '8402');
-              setEstimatedWait(data.estimatedWaitMinutes || 8);
-              setStep(5);
+          isAwaitingCashConfirm ? (
+            <div className="figma-card p-6 space-y-4 bg-white border border-amber-300 shadow-md text-center animate-in fade-in">
+              <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 text-amber-600 flex items-center justify-center">
+                <RotateCw className="w-7 h-7 animate-spin" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  Awaiting Counter Verification
+                </span>
+                <h2 className="text-xl font-bold text-slate-900 mt-1">
+                  Pay ₹{cashPendingPrice.toFixed(2)} at Counter
+                </h2>
+                <p className="text-xs text-slate-600 leading-relaxed px-2">
+                  Please hand <strong className="text-slate-900">₹{cashPendingPrice.toFixed(2)} in cash</strong> to the shopkeeper. Once confirmed, your queue token will generate automatically!
+                </p>
+              </div>
 
-              // Cache active order in localStorage for instant restore on refresh
-              if (typeof window !== 'undefined' && selectedShop) {
-                localStorage.setItem(
-                  `printspot_active_order_${selectedShop.id}`,
-                  JSON.stringify({
-                    jobId: data.jobId || jobId,
-                    tokenCode: data.tokenCode,
-                    tokenNumber: data.tokenNumber,
-                    queuePosition: data.position,
-                    pickupCode: data.pickupCode,
-                    estimatedWait: data.estimatedWaitMinutes,
-                    step: 5,
-                  })
-                );
-              }
-            }}
-            onBack={() => setStep(3)}
-          />
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center gap-2 text-xs font-semibold text-slate-700">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+                <span>Listening for counter confirmation...</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAwaitingCashConfirm(false)}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer pt-2"
+              >
+                Change payment method
+              </button>
+            </div>
+          ) : (
+            <CheckoutModal
+              files={files}
+              selectedServiceIds={selectedServiceIds}
+              shop={selectedShop}
+              user={user}
+              onUserAuthenticated={(u, token) => {
+                setUser(u);
+                setAuthToken(token);
+              }}
+              jobId={jobId}
+              createJob={handleCreateJob}
+              onPaymentSuccess={(data) => {
+                if (data.pendingConfirmation) {
+                  setJobId(data.jobId);
+                  setCashPendingPrice(Number(data.price) || calculateTotalPrice());
+                  setIsAwaitingCashConfirm(true);
+                  return;
+                }
+                setTokenCode(data.tokenCode || '');
+                setTokenNumber(data.tokenNumber || 0);
+                setQueuePosition(data.position || 1);
+                setPickupCode(data.pickupCode || '');
+                setEstimatedWait(data.estimatedWaitMinutes || 2);
+                setStep(5);
+
+                // Cache active order in localStorage for instant restore on refresh
+                if (typeof window !== 'undefined' && selectedShop) {
+                  localStorage.setItem(
+                    `printspot_active_order_${selectedShop.id}`,
+                    JSON.stringify({
+                      jobId: data.jobId || jobId,
+                      tokenCode: data.tokenCode,
+                      tokenNumber: data.tokenNumber,
+                      queuePosition: data.position,
+                      pickupCode: data.pickupCode,
+                      estimatedWait: data.estimatedWaitMinutes,
+                      step: 5,
+                    })
+                  );
+                }
+              }}
+              onBack={() => setStep(3)}
+            />
+          )
         )}
 
         {/* STEP 5: TOKEN CONFIRMATION */}

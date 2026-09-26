@@ -19,7 +19,7 @@ export const TokenConfirmation: React.FC<TokenConfirmationProps> = ({
   position,
   estimatedWaitMinutes,
   pickupCode,
-  totalPrice = 174,
+  totalPrice = 0,
   onProceedToQueue,
 }) => {
   const ordersAhead = Math.max(0, position - 1);
@@ -35,7 +35,7 @@ export const TokenConfirmation: React.FC<TokenConfirmationProps> = ({
           Your Print Token
         </h1>
         <p className="text-xs text-slate-500 leading-relaxed px-4">
-          Keep this token safe. You will need to enter this number or scan your QR code at the physical kiosk to release your prints.
+          Keep this token safe. Show this token or your pickup code at the counter to collect your prints when ready.
         </p>
       </div>
 
@@ -44,7 +44,7 @@ export const TokenConfirmation: React.FC<TokenConfirmationProps> = ({
         {/* Token Badge */}
         <div className="py-2">
           <span className="text-5xl font-black text-[#0e7490] tracking-tight">
-            {tokenCode || '#42'}
+            {tokenCode || '—'}
           </span>
         </div>
 

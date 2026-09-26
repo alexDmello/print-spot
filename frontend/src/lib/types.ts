@@ -50,12 +50,24 @@ export interface Shop {
   is_open?: boolean;
 }
 
+export interface LocalPrinterConfig {
+  systemName: string;       // OS-level printer name (exact match for spooler)
+  displayName: string;      // Human-friendly label assigned by shopkeeper
+  assignedRole: 'mono' | 'color' | 'any';
+  driverName?: string;
+  portName?: string;
+  isDefault?: boolean;
+  status?: 'online' | 'offline' | 'disconnected';
+  lastSeenAt?: string;       // ISO timestamp of last successful heartbeat
+}
+
 export interface PrintSettings {
   copies: number;
   color: boolean;
   duplex: boolean;
   paperSize: 'A4' | 'A3' | 'Letter';
   orientation?: 'portrait' | 'landscape';
+  pageFit?: 'fit' | 'fill';
 }
 
 export interface UploadedDocument {
@@ -72,6 +84,7 @@ export interface UploadedDocument {
   paperSize?: 'A4' | 'A3' | 'Letter';
   combineImages?: boolean;
   orientation?: 'portrait' | 'landscape';
+  pageFit?: 'fit' | 'fill';
   rawFile?: File;
 }
 
@@ -91,7 +104,7 @@ export interface PrintJob {
   file_size: number;
   page_count: number;
   settings: any;
-  status: 'created' | 'payment_pending' | 'waiting' | 'printing' | 'ready' | 'picked_up' | 'failed' | 'cancelled';
+  status: 'created' | 'payment_pending' | 'cash_confirmation_pending' | 'waiting' | 'printing' | 'ready' | 'picked_up' | 'failed' | 'cancelled';
   token_number?: number;
   token_code?: string;
   price: number;
@@ -101,7 +114,7 @@ export interface PrintJob {
   razorpay_order_id?: string;
   razorpay_payment_id?: string;
   payment_method?: 'upi' | 'card' | 'counter_cash' | 'counter_upi' | string;
-  payment_status?: 'pending' | 'paid' | 'pay_at_counter' | string;
+  payment_status?: 'pending' | 'paid' | 'pay_at_counter' | 'cash_pending' | 'cash_confirmed' | string;
   pickup_code?: string;
   error_message?: string;
   created_at: string;
@@ -113,6 +126,8 @@ export interface PrintJob {
   localBlobUrl?: string;
   isP2P?: boolean;
   p2pProgress?: number;
+  platform_fee?: number;
+  shop_payout?: number;
 }
 
 export interface QueueSnapshot {

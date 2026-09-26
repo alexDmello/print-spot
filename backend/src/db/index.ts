@@ -149,6 +149,9 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT true;
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS platform_fee_percent NUMERIC DEFAULT 5.0;
     ALTER TABLE shops ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS unsettled_cash_fee NUMERIC DEFAULT 0.00;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS total_platform_fees_settled NUMERIC DEFAULT 0.00;
+    ALTER TABLE shops ADD COLUMN IF NOT EXISTS max_pending_cash_fee NUMERIC DEFAULT 200.00;
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_shops_slug ON shops(slug);
 
@@ -217,6 +220,8 @@ async function runMigrations(): Promise<void> {
     ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'upi';
     ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'pending';
     ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS printed_at TIMESTAMP;
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS platform_fee NUMERIC DEFAULT 0.00;
+    ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS shop_payout NUMERIC DEFAULT 0.00;
 
     CREATE TABLE IF NOT EXISTS queue_entries (
       job_id TEXT PRIMARY KEY REFERENCES print_jobs(id) ON DELETE CASCADE,
@@ -267,10 +272,15 @@ export async function seedDefaults(): Promise<void> {
         'campus',
         'Student Center, Ground Floor (Near Cafeteria)',
         'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007',
+        'shop_main',
+        'PrintSpot Campus Hub',
+        'campus',
+        'Student Center, Ground Floor (Near Cafeteria)',
+        'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007',
         28.6912,
         77.2089,
-        'Vikram Malhotra',
-        '9876543210',
+        'Shop Owner',
+        '0000000000',
         'hub@printspot.in',
         '08:00 AM',
         '10:00 PM',
@@ -283,17 +293,6 @@ export async function seedDefaults(): Promise<void> {
         true,
       ]
     );
-
-    await query(
-      `INSERT INTO printers (id, shop_id, name, type, status, system_name)
-       VALUES 
-       ($1, $2, $3, $4, $5, $6),
-       ($7, $8, $9, $10, $11, $12)`,
-      [
-        'printer_mono_1', 'shop_main', 'HP LaserJet Pro M404n (High Speed Mono)', 'mono', 'online', 'Microsoft Print to PDF',
-        'printer_color_1', 'shop_main', 'Canon imageRUNNER ADVANCE C3530i (Color HD)', 'color', 'online', 'Microsoft Print to PDF'
-      ]
-    );
   } else {
     // Ensure shop_main has default address, credentials & status if null
     await query(
@@ -301,8 +300,8 @@ export async function seedDefaults(): Promise<void> {
        SET address = COALESCE(address, 'Shop G-04, Student Activity Center, North Campus, University Enclave, New Delhi, Delhi 110007'),
            latitude = COALESCE(latitude, 28.6912),
            longitude = COALESCE(longitude, 77.2089),
-           owner_name = COALESCE(owner_name, 'Vikram Malhotra'),
-           owner_phone = COALESCE(owner_phone, '9876543210'),
+           owner_name = COALESCE(owner_name, 'Shop Owner'),
+           owner_phone = COALESCE(owner_phone, '0000000000'),
            owner_email = COALESCE(owner_email, 'hub@printspot.in'),
            opening_time = COALESCE(opening_time, '08:00 AM'),
            closing_time = COALESCE(closing_time, '10:00 PM'),

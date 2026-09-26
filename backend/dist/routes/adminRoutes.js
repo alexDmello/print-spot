@@ -6,6 +6,7 @@ const db_1 = require("../db");
 const shopAuthService_1 = require("../services/shopAuthService");
 const security_1 = require("../utils/security");
 const socketHandler_1 = require("../socket/socketHandler");
+const slugAllocator_1 = require("../utils/slugAllocator");
 const router = (0, express_1.Router)();
 // 1. Super Admin Login
 router.post('/login', async (req, res) => {
@@ -146,7 +147,7 @@ router.get('/shops', shopAuthService_1.adminAuthMiddleware, async (_req, res) =>
         res.status(500).json({ error: err.message });
     }
 });
-// Check if a custom subdomain slug is available
+// Check if a custom subdomain slug is available (Phase 6B)
 router.get('/check-slug', async (req, res) => {
     try {
         const rawSlug = (req.query.slug || '').toLowerCase().trim();
@@ -154,18 +155,23 @@ router.get('/check-slug', async (req, res) => {
             res.status(400).json({ error: 'Slug parameter is required.' });
             return;
         }
-        const cleanSlug = rawSlug.replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
-        const RESERVED = ['admin', 'api', 'www', 'app', 'mail', 'shop', 'status', 'portal', 'root', 'help', 'static', 'auth'];
-        if (RESERVED.includes(cleanSlug)) {
-            res.json({ available: false, slug: cleanSlug, reason: `'${cleanSlug}' is a reserved system subdomain.` });
+        const cleanSlug = (0, slugAllocator_1.sanitizeSlug)(rawSlug);
+        const allocation = await (0, slugAllocator_1.allocateUniqueSlug)(cleanSlug, cleanSlug);
+        if (!allocation.isOriginalAvailable) {
+            res.json({
+                available: false,
+                slug: cleanSlug,
+                reason: `'${cleanSlug}.mellod.in' is unavailable or reserved.`,
+                recommendedSlug: allocation.slug,
+                suggestions: allocation.suggestions,
+            });
             return;
         }
-        const existing = await (0, db_1.query)('SELECT id FROM shops WHERE slug = $1', [cleanSlug]);
-        if (existing.rowCount > 0) {
-            res.json({ available: false, slug: cleanSlug, reason: `'${cleanSlug}.mellod.in' is already registered.` });
-            return;
-        }
-        res.json({ available: true, slug: cleanSlug });
+        res.json({
+            available: true,
+            slug: cleanSlug,
+            suggestions: allocation.suggestions,
+        });
     }
     catch (err) {
         res.status(500).json({ error: err.message });
@@ -183,26 +189,12 @@ router.post('/shops', shopAuthService_1.adminAuthMiddleware, async (req, res) =>
             res.status(400).json({ error: 'Shop owner phone number is required for login.' });
             return;
         }
-        // Determine & validate custom subdomain slug
-        let finalSlug = (customSlug || '')
-            .toLowerCase()
-            .trim()
-            .replace(/[^a-z0-9-]/g, '')
-            .replace(/-+/g, '-')
-            .replace(/^-|-$/g, '');
-        if (!finalSlug) {
-            finalSlug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 20);
-        }
-        const RESERVED = ['admin', 'api', 'www', 'app', 'mail', 'shop', 'status', 'portal', 'root', 'help', 'static', 'auth'];
-        if (RESERVED.includes(finalSlug)) {
-            res.status(400).json({ error: `The subdomain '${finalSlug}' is a reserved system keyword. Please choose another slug.` });
-            return;
-        }
-        const slugCheck = await (0, db_1.query)('SELECT id FROM shops WHERE slug = $1', [finalSlug]);
-        if (slugCheck.rowCount > 0) {
-            res.status(400).json({ error: `The counter subdomain '${finalSlug}.mellod.in' is already taken.` });
-            return;
-        }
+        // Determine & validate custom subdomain slug using Smart Allocator (Phase 6B)
+        const allocation = await (0, slugAllocator_1.allocateUniqueSlug)(name, customSlug);
+        const finalSlug = allocation.slug;
+        const slugNotice = !allocation.isOriginalAvailable && customSlug
+            ? `'${customSlug}' was taken. Your counter was registered as '${finalSlug}'.`
+            : undefined;
         // Generate unique shop ID
         const shopId = `shop_${finalSlug.replace(/-/g, '_').slice(0, 16)}_${Math.random().toString(36).substring(2, 7)}`;
         const shopPin = pin ? pin.toString().trim() : '1234';

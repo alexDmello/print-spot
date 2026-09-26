@@ -260,7 +260,7 @@ export default function ShopLoginPage() {
 
       {/* Footer */}
       <footer className="py-4 text-center text-xs text-slate-400">
-        PrintSpot Smart Counter Platform • Multi-Tenant Kiosk Engine
+        PrintSpot Smart Counter Platform • Multi-Tenant Print Engine
       </footer>
     </div>
   );

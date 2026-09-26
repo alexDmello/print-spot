@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.isShopLive = isShopLive;
 exports.initSocketServer = initSocketServer;
 exports.getSocketServer = getSocketServer;
 exports.checkAndDispatchNextJob = checkAndDispatchNextJob;
@@ -9,6 +10,16 @@ const db_1 = require("../db");
 const queueEngine_1 = require("../redis/queueEngine");
 const printerRoutingService_1 = require("../services/printerRoutingService");
 let io = null;
+const shopLiveStatus = new Map();
+/**
+ * Checks whether a shop has an active dashboard connection with physical printers
+ */
+function isShopLive(shopId) {
+    const entry = shopLiveStatus.get(shopId);
+    if (!entry)
+        return false;
+    return Date.now() - entry.lastPing < 25000 && entry.hasPrinters;
+}
 function initSocketServer(httpServer) {
     io = new socket_io_1.Server(httpServer, {
         cors: {
@@ -49,6 +60,12 @@ function initSocketServer(httpServer) {
                 console.error('[Socket] Error fetching job status on subscribe:', err);
             }
         });
+        // Support join_shop shorthand
+        socket.on('join_shop', (shopId) => {
+            if (!shopId)
+                return;
+            socket.join(`shop:${shopId}`);
+        });
         // Shop Admin subscribes to shop updates
         socket.on('subscribe_shop', async (data) => {
             if (!data || !data.shopId)
@@ -65,6 +82,44 @@ function initSocketServer(httpServer) {
             catch (err) {
                 console.error('[Socket] Error sending initial shop data:', err);
             }
+        });
+        // Shop Admin heartbeat (Phase 2A)
+        socket.on('shop_heartbeat', (data) => {
+            if (!data?.shopId)
+                return;
+            const existing = shopLiveStatus.get(data.shopId);
+            if (existing?.graceTimer) {
+                clearTimeout(existing.graceTimer);
+            }
+            shopLiveStatus.set(data.shopId, {
+                socketId: socket.id,
+                lastPing: Date.now(),
+                hasPrinters: (data.connectedPrinterCount || 0) > 0,
+                connectedPrinterCount: data.connectedPrinterCount || 0,
+            });
+        });
+        // ==========================================
+        // 🚀 Ephemeral Socket Relay Fallback (Zero Disk Storage - Phase 3A)
+        // ==========================================
+        socket.on('relay_file_chunk', (data) => {
+            if (!data?.shopId || !data?.jobId)
+                return;
+            socket.to(`shop:${data.shopId}`).emit('relay_file_chunk_received', {
+                fromSocketId: socket.id,
+                jobId: data.jobId,
+                chunkIndex: data.chunkIndex,
+                totalChunks: data.totalChunks,
+                data: data.data,
+                metadata: data.metadata,
+            });
+        });
+        socket.on('relay_file_complete', (data) => {
+            if (!data?.shopId || !data?.jobId)
+                return;
+            socket.to(`shop:${data.shopId}`).emit('relay_file_complete', {
+                fromSocketId: socket.id,
+                jobId: data.jobId,
+            });
         });
         // ==========================================
         // 🌐 WebRTC Peer-to-Peer (P2P) Direct Signaling
@@ -194,7 +249,28 @@ function initSocketServer(httpServer) {
             }
         });
         socket.on('disconnect', () => {
-            // Clean disconnect
+            for (const [shopId, entry] of shopLiveStatus.entries()) {
+                if (entry.socketId === socket.id) {
+                    if (entry.graceTimer)
+                        clearTimeout(entry.graceTimer);
+                    entry.graceTimer = setTimeout(async () => {
+                        const current = shopLiveStatus.get(shopId);
+                        if (current && current.socketId === socket.id) {
+                            shopLiveStatus.delete(shopId);
+                            console.log(`[Shop Liveness] Shop ${shopId} disconnected for > 30s. Setting is_open = false`);
+                            try {
+                                await (0, db_1.query)(`UPDATE shops SET is_open = false WHERE id = $1`, [shopId]);
+                                io?.to(`shop:${shopId}`).emit('shop_open_status_changed', { isOpen: false });
+                                io?.emit('shop_updated', { id: shopId, is_open: false });
+                            }
+                            catch (e) {
+                                console.error('[Shop Liveness] Error setting is_open = false on disconnect:', e);
+                            }
+                        }
+                    }, 30000);
+                    break;
+                }
+            }
         });
     });
     return io;

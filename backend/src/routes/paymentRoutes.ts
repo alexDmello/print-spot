@@ -1,6 +1,14 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import { createPaymentOrder, confirmJobPayment, confirmPayAtCounter, verifyWebhookSignature } from '../services/paymentService';
+import { 
+  createPaymentOrder, 
+  confirmJobPayment, 
+  confirmPayAtCounter, 
+  confirmCashPaymentByShop, 
+  declineCashPaymentByShop, 
+  verifyWebhookSignature 
+} from '../services/paymentService';
+import { shopAuthMiddleware } from '../services/shopAuthService';
 import { config } from '../config/env';
 
 const router = Router();
@@ -85,6 +93,42 @@ router.post('/pay-at-counter', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[Payment] Error in Pay at Counter:', err);
     res.status(500).json({ error: err.message || 'Failed to place order.' });
+  }
+});
+
+// Confirm Cash received at counter (Shopkeeper Auth required - Phase 4A)
+router.post('/confirm-cash', shopAuthMiddleware, async (req: any, res: Response) => {
+  try {
+    const { jobId } = req.body;
+    const shopId = req.shop?.shopId;
+    if (!jobId || !shopId) {
+      res.status(400).json({ error: 'jobId is required.' });
+      return;
+    }
+
+    const result = await confirmCashPaymentByShop(jobId, shopId);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    console.error('[Payment] Error confirming cash order:', err);
+    res.status(500).json({ error: err.message || 'Failed to confirm cash payment.' });
+  }
+});
+
+// Decline Cash order (Shopkeeper Auth required - Phase 4A)
+router.post('/decline-cash', shopAuthMiddleware, async (req: any, res: Response) => {
+  try {
+    const { jobId, reason } = req.body;
+    const shopId = req.shop?.shopId;
+    if (!jobId || !shopId) {
+      res.status(400).json({ error: 'jobId is required.' });
+      return;
+    }
+
+    const result = await declineCashPaymentByShop(jobId, shopId, reason);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[Payment] Error declining cash order:', err);
+    res.status(500).json({ error: err.message || 'Failed to decline cash payment.' });
   }
 });
 

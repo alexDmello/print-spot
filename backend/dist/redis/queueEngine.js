@@ -209,15 +209,42 @@ class QueueEngine {
         };
     }
     /**
-     * Calculates wait time estimate (minutes)
+     * Calculates wait time estimate (minutes) based on throughput of jobs ahead
      */
-    calculateWaitTime(position, pageCount = 5) {
+    calculateWaitTime(position, pageCount = 5, jobsAhead = []) {
         if (position <= 1)
             return 1;
-        // Assume ~1.5 mins per job ahead + 0.1 min per page
-        const jobsAhead = position - 1;
-        const estimated = Math.ceil(jobsAhead * 1.5 + (pageCount * 0.1));
+        if (jobsAhead && jobsAhead.length > 0) {
+            let totalSeconds = 0;
+            for (const job of jobsAhead) {
+                const settings = typeof job.settings === 'string' ? JSON.parse(job.settings) : job.settings;
+                const copies = settings?.copies || 1;
+                const sheets = (job.page_count || 1) * copies;
+                const ppm = settings?.color ? 10 : 20; // color vs mono laser throughput
+                const printSeconds = (sheets / ppm) * 60;
+                const overheadSeconds = 20; // spooling + paper feed per job
+                totalSeconds += printSeconds + overheadSeconds;
+            }
+            return Math.max(1, Math.ceil(totalSeconds / 60));
+        }
+        const countAhead = position - 1;
+        const estimated = Math.ceil(countAhead * 1.5 + (pageCount * 0.1));
         return Math.max(1, estimated);
+    }
+    /**
+     * Calculates actual wait time for a specific job in a shop based on real jobs ahead
+     */
+    async getEstimatedWaitForJob(shopId, jobId) {
+        const jobIds = await this.getQueueJobIds(shopId);
+        const index = jobIds.indexOf(jobId);
+        if (index <= 0)
+            return 1;
+        const aheadIds = jobIds.slice(0, index);
+        if (aheadIds.length === 0)
+            return 1;
+        const placeholders = aheadIds.map((_, i) => `$${i + 1}`).join(',');
+        const res = await (0, db_1.query)(`SELECT page_count, settings FROM print_jobs WHERE id IN (${placeholders})`, aheadIds);
+        return this.calculateWaitTime(index + 1, 5, res.rows);
     }
 }
 exports.queueEngine = new QueueEngine();
