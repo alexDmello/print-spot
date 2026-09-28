@@ -4,7 +4,7 @@ import { exec } from 'child_process';
 import util from 'util';
 import { query } from '../db';
 import { queueEngine } from '../redis/queueEngine';
-import { getSocketServer, isShopLive } from '../socket/socketHandler';
+import { getSocketServer, isShopLive, getAgentPrinters } from '../socket/socketHandler';
 import { loginShop, shopAuthMiddleware } from '../services/shopAuthService';
 import { isVirtualPrinter } from '../utils/printerFilter';
 
@@ -694,62 +694,182 @@ router.post('/:id/printers/assign', async (req: Request, res: Response) => {
   }
 });
 
-// Detect real connected system printers from host OS
+// Helper for robust Windows printer detection with multi-tier fallback
+async function detectWindowsPrinters(): Promise<any[]> {
+  // Strategy 1: Get-Printer (PowerShell PrintManagement module)
+  try {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const trimmed = (stdout || '').trim();
+    if (trimmed) {
+      const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+        ? trimmed.indexOf('[')
+        : trimmed.indexOf('{');
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(trimmed.slice(jsonStart));
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (list.length > 0) return list;
+      }
+    }
+  } catch (err1: any) {
+    console.warn('[Printer Detection] Strategy 1 (Get-Printer) failed, trying Get-CimInstance:', err1?.message || err1);
+  }
+
+  // Strategy 2: Get-CimInstance Win32_Printer (WMI/CIM - available on all Windows editions)
+  try {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus, Default | ConvertTo-Json -Compress"`;
+    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const trimmed = (stdout || '').trim();
+    if (trimmed) {
+      const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+        ? trimmed.indexOf('[')
+        : trimmed.indexOf('{');
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(trimmed.slice(jsonStart));
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (list.length > 0) return list;
+      }
+    }
+  } catch (err2: any) {
+    console.warn('[Printer Detection] Strategy 2 (Get-CimInstance) failed, trying Get-WmiObject:', err2?.message || err2);
+  }
+
+  // Strategy 3: Get-WmiObject Win32_Printer (legacy Windows fallback)
+  try {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const trimmed = (stdout || '').trim();
+    if (trimmed) {
+      const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+        ? trimmed.indexOf('[')
+        : trimmed.indexOf('{');
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(trimmed.slice(jsonStart));
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (list.length > 0) return list;
+      }
+    }
+  } catch (err3: any) {
+    console.warn('[Printer Detection] Strategy 3 (Get-WmiObject) failed:', err3?.message || err3);
+  }
+
+  return [];
+}
+
+// Detect real connected system printers from host OS or connected Printer Agent
 router.get('/:id/printers/system-hardware', async (req: Request, res: Response) => {
   try {
+    const { id } = req.params;
+    const includeVirtual = req.query.includeVirtual === 'true' || req.query.include_virtual === 'true';
     const isWindows = process.platform === 'win32';
-    let systemPrinters: any[] = [];
+    const detectedAllPrinters: any[] = [];
 
-    if (isWindows) {
-      try {
-        const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
-        const { stdout } = await execAsync(cmd);
-        if (stdout && stdout.trim()) {
-          const parsed = JSON.parse(stdout);
-          const list = Array.isArray(parsed) ? parsed : [parsed];
-          const physicalList = list.filter((p: any) => !isVirtualPrinter(p.Name, p.DriverName, p.PortName));
-
-          systemPrinters = physicalList.map((p: any) => ({
-            name: p.Name || 'Unknown Device',
-            system_name: p.Name || 'Unknown Device',
-            driver: p.DriverName || 'System Spooler Driver',
-            port: p.PortName || '',
-            status: p.PrinterStatus && p.PrinterStatus.toString().toLowerCase().includes('offline') ? 'offline' : 'online',
-          }));
+    // 1. Check if an Agent has reported connected printers for this shop
+    try {
+      const agentPrinters = getAgentPrinters(id);
+      if (agentPrinters && agentPrinters.length > 0) {
+        for (const ap of agentPrinters) {
+          const sysName = ap.systemName || ap.name || 'Printer';
+          const isVirt = isVirtualPrinter(sysName, ap.driver, ap.port);
+          detectedAllPrinters.push({
+            name: ap.name || sysName,
+            system_name: sysName,
+            driver: ap.driver || 'Printer Agent Spooler',
+            port: ap.port || 'agent',
+            status: ap.status || 'online',
+            isVirtual: isVirt,
+            source: 'agent',
+          });
         }
-      } catch (execErr) {
-        console.warn('[System Printer Detection] PowerShell Get-Printer failed:', execErr);
+      }
+    } catch (agentErr) {
+      console.warn('[System Printer Detection] Error reading agent printers:', agentErr);
+    }
+
+    // 2. Query Host OS Printers (Windows / Linux CUPS)
+    if (isWindows) {
+      const winList = await detectWindowsPrinters();
+      for (const p of winList) {
+        const name = p.Name || 'Unknown Device';
+        const driver = p.DriverName || 'System Spooler Driver';
+        const port = p.PortName || '';
+        const isVirt = isVirtualPrinter(name, driver, port);
+        const statusVal = p.PrinterStatus !== undefined && p.PrinterStatus !== null ? p.PrinterStatus.toString().toLowerCase() : '';
+        const isOffline = statusVal.includes('offline') || statusVal === '7' || statusVal === '8';
+
+        detectedAllPrinters.push({
+          name,
+          system_name: name,
+          driver,
+          port,
+          status: isOffline ? 'offline' : 'online',
+          isVirtual: isVirt,
+          source: 'os_host',
+        });
       }
     } else {
       // Unix / CUPS detection fallback
       try {
-        const { stdout } = await execAsync('lpstat -p');
-        const lines = stdout.split('\n');
+        const { stdout } = await execAsync('lpstat -p', { timeout: 4000 });
+        const lines = (stdout || '').split('\n');
         for (const line of lines) {
           const match = line.match(/^printer (\S+)/);
           if (match) {
             const name = match[1];
-            if (!isVirtualPrinter(name)) {
-              systemPrinters.push({
-                name,
-                system_name: name,
-                driver: 'CUPS Native Driver',
-                port: 'cups',
-                status: 'online',
-              });
-            }
+            const isVirt = isVirtualPrinter(name);
+            detectedAllPrinters.push({
+              name,
+              system_name: name,
+              driver: 'CUPS Native Driver',
+              port: 'cups',
+              status: line.includes('disabled') ? 'offline' : 'online',
+              isVirtual: isVirt,
+              source: 'cups',
+            });
           }
         }
       } catch (lpErr) {
-        console.warn('[System Printer Detection] lpstat failed:', lpErr);
+        // Expected when running on cloud serverless container without CUPS
       }
     }
+
+    // Deduplicate by system_name
+    const seen = new Set<string>();
+    const uniquePrinters: any[] = [];
+    for (const p of detectedAllPrinters) {
+      const key = (p.system_name || p.name).toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniquePrinters.push(p);
+      }
+    }
+
+    // Classify into Physical vs Virtual
+    const physicalPrinters = uniquePrinters.filter((p) => !p.isVirtual);
+    const virtualPrinters = uniquePrinters.filter((p) => p.isVirtual);
+
+    const resultList = includeVirtual ? uniquePrinters : physicalPrinters;
+
+    // Fetch existing printers already registered in DB for this shop
+    const dbPrintersRes = await query(
+      'SELECT id, shop_id, name, type, status, system_name FROM printers WHERE shop_id = $1 ORDER BY created_at ASC',
+      [id]
+    );
 
     res.json({
       success: true,
       platform: process.platform,
-      printers: systemPrinters,
-      message: systemPrinters.length === 0 ? 'No physical printers detected.' : undefined,
+      printers: resultList,
+      physicalCount: physicalPrinters.length,
+      virtualCount: virtualPrinters.length,
+      hasVirtualPrinters: virtualPrinters.length > 0,
+      databasePrinters: dbPrintersRes.rows,
+      message:
+        resultList.length === 0
+          ? virtualPrinters.length > 0
+            ? 'No physical hardware printers detected. Virtual/PDF drivers are available.'
+            : 'No printers detected on this computer.'
+          : undefined,
     });
   } catch (err: any) {
     console.error('[Shops] Error detecting system hardware printers:', err);

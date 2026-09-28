@@ -335,4 +335,50 @@ router.delete('/shops/:id', shopAuthService_1.adminAuthMiddleware, async (req, r
         res.status(500).json({ error: err.message });
     }
 });
+// 9. Get Platform Routing Configuration
+router.get('/settings/routing', async (_req, res) => {
+    try {
+        const result = await (0, db_1.query)('SELECT value FROM platform_settings WHERE key = $1', ['routing']);
+        if (result.rowCount === 0) {
+            res.json({
+                scheme: 'path',
+                baseUrl: '',
+                domain: 'mellod.in',
+                description: 'Universal Path routing (/counter/:slug) works reliably across all mobile devices, local Wi-Fi networks, and public domains.',
+            });
+            return;
+        }
+        const val = typeof result.rows[0].value === 'string' ? JSON.parse(result.rows[0].value) : result.rows[0].value;
+        res.json(val);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// 10. Update Platform Routing Configuration (Admin Only)
+router.put('/settings/routing', shopAuthService_1.adminAuthMiddleware, async (req, res) => {
+    try {
+        const { scheme, baseUrl, domain } = req.body;
+        const cleanScheme = ['path', 'subdomain', 'query'].includes(scheme) ? scheme : 'path';
+        const cleanBaseUrl = (baseUrl || '').trim().replace(/\/+$/, '');
+        const cleanDomain = (domain || 'mellod.in').trim();
+        const configVal = {
+            scheme: cleanScheme,
+            baseUrl: cleanBaseUrl,
+            domain: cleanDomain,
+            updated_at: new Date().toISOString(),
+        };
+        await (0, db_1.query)(`INSERT INTO platform_settings (key, value, updated_at) 
+       VALUES ('routing', $1, CURRENT_TIMESTAMP)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP`, [JSON.stringify(configVal)]);
+        const io = (0, socketHandler_1.getSocketServer)();
+        if (io) {
+            io.emit('platform_routing_updated', configVal);
+        }
+        res.json({ success: true, settings: configVal, message: 'URL and QR routing configuration updated successfully.' });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 exports.default = router;

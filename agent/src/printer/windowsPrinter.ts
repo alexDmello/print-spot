@@ -65,45 +65,91 @@ export function isVirtualPrinter(name?: string, driver?: string, port?: string):
  * Detects local physical Windows printers using PowerShell (filtering out virtual drivers)
  */
 export async function getWindowsPrinters(): Promise<DetectedPrinter[]> {
-  try {
-    const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
-    const { stdout } = await execAsync(cmd);
-    if (!stdout.trim()) return [];
+  let list: any[] = [];
 
-    let parsed: any;
+  // Strategy 1: Get-Printer
+  try {
+    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+    const { stdout } = await execAsync(cmd, { timeout: 6000 });
+    const trimmed = (stdout || '').trim();
+    if (trimmed) {
+      const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+        ? trimmed.indexOf('[')
+        : trimmed.indexOf('{');
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(trimmed.slice(jsonStart));
+        list = Array.isArray(parsed) ? parsed : [parsed];
+      }
+    }
+  } catch (err1) {
+    console.warn('[Agent Detection] Strategy 1 (Get-Printer) failed, trying Get-CimInstance...');
+  }
+
+  // Strategy 2: Get-CimInstance Win32_Printer
+  if (list.length === 0) {
     try {
-      parsed = JSON.parse(stdout);
-    } catch {
-      return [];
+      const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+      const { stdout } = await execAsync(cmd, { timeout: 6000 });
+      const trimmed = (stdout || '').trim();
+      if (trimmed) {
+        const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+          ? trimmed.indexOf('[')
+          : trimmed.indexOf('{');
+        if (jsonStart !== -1) {
+          const parsed = JSON.parse(trimmed.slice(jsonStart));
+          list = Array.isArray(parsed) ? parsed : [parsed];
+        }
+      }
+    } catch (err2) {
+      console.warn('[Agent Detection] Strategy 2 (Get-CimInstance) failed, trying Get-WmiObject...');
+    }
+  }
+
+  // Strategy 3: Get-WmiObject Win32_Printer
+  if (list.length === 0) {
+    try {
+      const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+      const { stdout } = await execAsync(cmd, { timeout: 6000 });
+      const trimmed = (stdout || '').trim();
+      if (trimmed) {
+        const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+          ? trimmed.indexOf('[')
+          : trimmed.indexOf('{');
+        if (jsonStart !== -1) {
+          const parsed = JSON.parse(trimmed.slice(jsonStart));
+          list = Array.isArray(parsed) ? parsed : [parsed];
+        }
+      }
+    } catch (err3) {
+      console.warn('[Agent Detection] Strategy 3 (Get-WmiObject) failed.');
+    }
+  }
+
+  if (list.length === 0) return [];
+
+  // Filter out virtual printers (PDF writers, OneNote, Fax, etc.)
+  const physicalList = list.filter((p: any) => !isVirtualPrinter(p.Name, p.DriverName, p.PortName));
+  const activeList = physicalList.length > 0 ? physicalList : list;
+
+  return activeList.map((p: any, idx: number) => {
+    const name = p.Name || `Printer-${idx + 1}`;
+    const nameLower = name.toLowerCase();
+    const isColor = nameLower.includes('color') || nameLower.includes('c3530') || nameLower.includes('deskjet');
+
+    let status: 'online' | 'offline' | 'out-of-paper' | 'low-ink' = 'online';
+    const statusVal = p.PrinterStatus !== undefined && p.PrinterStatus !== null ? p.PrinterStatus.toString().toLowerCase() : '';
+    if (statusVal.includes('offline') || statusVal === '7' || statusVal === '8') {
+      status = 'offline';
     }
 
-    const list = Array.isArray(parsed) ? parsed : [parsed];
-
-    // Filter out virtual printers (PDF writers, OneNote, Fax, etc.)
-    const physicalList = list.filter((p: any) => !isVirtualPrinter(p.Name, p.DriverName, p.PortName));
-
-    return physicalList.map((p: any, idx: number) => {
-      const name = p.Name || `Printer-${idx + 1}`;
-      const nameLower = name.toLowerCase();
-      const isColor = nameLower.includes('color') || nameLower.includes('c3530') || nameLower.includes('deskjet');
-
-      let status: 'online' | 'offline' | 'out-of-paper' | 'low-ink' = 'online';
-      if (p.PrinterStatus && p.PrinterStatus.toString().toLowerCase().includes('offline')) {
-        status = 'offline';
-      }
-
-      return {
-        id: `win_printer_${idx + 1}`,
-        name,
-        type: isColor ? 'color' : 'mono',
-        status,
-        systemName: name,
-      };
-    });
-  } catch (err) {
-    console.warn('[Printer Detection] Could not query Windows printers via PowerShell:', err);
-    return [];
-  }
+    return {
+      id: `win_printer_${idx + 1}`,
+      name,
+      type: isColor ? 'color' : 'mono',
+      status,
+      systemName: name,
+    };
+  });
 }
 
 /**

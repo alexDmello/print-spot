@@ -91,6 +91,9 @@ async function loginShop(identifier, secret) {
     }
     // Generate 30-day persistent JWT
     const token = jsonwebtoken_1.default.sign({ shopId: shop.id, name: shop.name, role: 'shop_owner' }, env_1.config.jwtSecret, { expiresIn: '30d' });
+    // Always initialize counter as closed upon login
+    await (0, db_1.query)('UPDATE shops SET is_open = false WHERE id = $1', [shop.id]);
+    shop.is_open = false;
     const { pin, password_hash, ...safeShop } = shop;
     return { token, shop: safeShop };
 }

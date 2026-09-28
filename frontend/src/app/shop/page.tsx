@@ -136,6 +136,13 @@ export default function ShopDashboardPage() {
   const [services, setServices] = useState<ShopService[]>([]);
   const [systemPrinters, setSystemPrinters] = useState<any[]>([]);
   const [isDetectingSystem, setIsDetectingSystem] = useState(false);
+  const [includeVirtualPrinters, setIncludeVirtualPrinters] = useState(false);
+  const [hasVirtualPrintersOnHost, setHasVirtualPrintersOnHost] = useState(false);
+  const [isManualAddModalOpen, setIsManualAddModalOpen] = useState(false);
+  const [manualPrinterName, setManualPrinterName] = useState('');
+  const [manualSystemName, setManualSystemName] = useState('');
+  const [manualPrinterRole, setManualPrinterRole] = useState<'mono' | 'color' | 'any'>('mono');
+  const [isSavingPrinter, setIsSavingPrinter] = useState(false);
 
   // Standee QR Code
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
@@ -236,6 +243,21 @@ export default function ShopDashboardPage() {
           console.warn('Error reading saved local printers:', e);
         }
 
+        // Auto-hydrate from database printers if localStorage is empty
+        if (savedPrinters.length === 0 && currentShop.printers && currentShop.printers.length > 0) {
+          savedPrinters = currentShop.printers.map((p) => ({
+            systemName: p.system_name || p.name,
+            displayName: p.name,
+            assignedRole: (p.type as 'mono' | 'color' | 'any') || 'mono',
+            driverName: 'Database Spooler',
+            portName: 'saved',
+            isDefault: false,
+            status: (p.status === 'offline' ? 'offline' : 'online') as 'online' | 'offline',
+            lastSeenAt: new Date().toISOString(),
+          }));
+          localStorage.setItem(storageKey, JSON.stringify(savedPrinters));
+        }
+
         // Background check against live physical system hardware
         try {
           const sysRes = await fetch(`/api/shops/${currentShop.id}/printers/system-hardware`);
@@ -243,6 +265,7 @@ export default function ShopDashboardPage() {
             const sysData = await sysRes.json();
             const physicalPrinters = sysData.printers || [];
             setSystemPrinters(physicalPrinters);
+            setHasVirtualPrintersOnHost(Boolean(sysData.hasVirtualPrinters));
 
             if (savedPrinters.length > 0) {
               const updated = savedPrinters.map((p) => {
@@ -251,7 +274,7 @@ export default function ShopDashboardPage() {
                 );
                 return {
                   ...p,
-                  status: (isPresent ? 'online' : 'disconnected') as 'online' | 'disconnected',
+                  status: (isPresent ? 'online' : (p.status || 'online')) as 'online' | 'disconnected',
                   lastSeenAt: isPresent ? new Date().toISOString() : p.lastSeenAt,
                 };
               });
@@ -456,9 +479,11 @@ export default function ShopDashboardPage() {
     if (!shop || !token || isTogglingStatus) return;
 
     if (!shop.is_open) {
-      const activePrinters = localPrinters.filter((p) => p.status !== 'disconnected');
-      if (activePrinters.length === 0) {
-        showToast('⚠️ Cannot open counter: Connect at least one active physical printer in Printers & Spoolers.');
+      const hasActivePrinters =
+        localPrinters.some((p) => p.status !== 'disconnected') ||
+        printers.some((p) => p.status === 'online');
+      if (!hasActivePrinters && localPrinters.length === 0 && printers.length === 0) {
+        showToast('⚠️ Cannot open counter: Connect at least one active printer in Printers & Spoolers.');
         return;
       }
     }
@@ -745,24 +770,32 @@ export default function ShopDashboardPage() {
     }
   };
 
-  // Local Printer Management Handlers (Phase 1B)
-  const handleDetectPrinters = async () => {
+  // Local Printer Management Handlers (Phase 1B & 1C)
+  const handleDetectPrinters = async (withVirtual?: boolean) => {
     if (!shop) return;
     setIsDetectingSystem(true);
+    const virtualParam = withVirtual !== undefined ? withVirtual : includeVirtualPrinters;
     try {
-      const res = await fetch(`/api/shops/${shop.id}/printers/system-hardware`);
+      const res = await fetch(`/api/shops/${shop.id}/printers/system-hardware?includeVirtual=${virtualParam}`);
       const data = await res.json();
       if (data.printers) {
         setSystemPrinters(data.printers);
+        setHasVirtualPrintersOnHost(Boolean(data.hasVirtualPrinters));
         if (data.printers.length === 0) {
-          showToast('No physical printers detected on this computer. Virtual PDF drivers are filtered out.');
+          if (data.hasVirtualPrinters) {
+            showToast('No physical printers detected. Virtual/PDF drivers are available on host.');
+          } else {
+            showToast('No printers detected on this computer.');
+          }
         } else {
-          showToast(`Detected ${data.printers.length} physical printer(s).`);
+          showToast(`Detected ${data.printers.length} printer(s) on host.`);
           if (!selectedSystemPrinter && data.printers.length > 0) {
             setSelectedSystemPrinter(data.printers[0]);
             setCustomDisplayName(data.printers[0].name);
           }
         }
+      } else if (data.error) {
+        showToast(`Detection error: ${data.error}`);
       }
     } catch (err) {
       showToast('Error detecting hardware printers.');
@@ -771,12 +804,16 @@ export default function ShopDashboardPage() {
     }
   };
 
-  const handleSaveLocalPrinter = (sysPrinter: any, role: 'mono' | 'color' | 'any', label: string) => {
+  const handleSaveLocalPrinter = async (sysPrinter: any, role: 'mono' | 'color' | 'any', label: string) => {
     if (!shop) return;
+    setIsSavingPrinter(true);
+    const sysName = sysPrinter.name || sysPrinter.system_name;
+    const displayName = label.trim() || sysPrinter.name || sysName;
     const storageKey = `printspot_local_printers_${shop.id}`;
+
     const newConfig: LocalPrinterConfig = {
-      systemName: sysPrinter.name || sysPrinter.system_name,
-      displayName: label.trim() || sysPrinter.name,
+      systemName: sysName,
+      displayName,
       assignedRole: role,
       driverName: sysPrinter.driver,
       portName: sysPrinter.port,
@@ -796,18 +833,108 @@ export default function ShopDashboardPage() {
 
     setLocalPrinters(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
-    showToast(`Printer "${newConfig.displayName}" connected & saved locally.`);
+
+    // Dual-sync to backend database so customer kiosk & queue engine know it's online
+    try {
+      const res = await fetch(`/api/shops/${shop.id}/printers/assign-system`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: displayName,
+          system_name: sysName,
+          type: role === 'color' ? 'color' : 'mono',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.printers) {
+          setPrinters(data.printers);
+        }
+      }
+    } catch (syncErr) {
+      console.warn('Backend printer sync deferred:', syncErr);
+    } finally {
+      setIsSavingPrinter(false);
+    }
+
+    showToast(`Printer "${displayName}" connected & saved.`);
     setSelectedSystemPrinter(null);
     setCustomDisplayName('');
   };
 
-  const handleRemoveLocalPrinter = (systemName: string) => {
+  const handleAddManualPrinter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shop || !manualPrinterName.trim()) return;
+    const sysName = manualSystemName.trim() || manualPrinterName.trim();
+    const displayName = manualPrinterName.trim();
+    const role = manualPrinterRole;
+
+    await handleSaveLocalPrinter(
+      { name: displayName, system_name: sysName, driver: 'Spooler Driver', port: 'local/ip' },
+      role,
+      displayName
+    );
+
+    setIsManualAddModalOpen(false);
+    setManualPrinterName('');
+    setManualSystemName('');
+    setManualPrinterRole('mono');
+  };
+
+  const handleUpdatePrinterRole = async (systemName: string, newRole: 'mono' | 'color' | 'any') => {
+    if (!shop) return;
+    const storageKey = `printspot_local_printers_${shop.id}`;
+    const updated = localPrinters.map((p) =>
+      p.systemName === systemName ? { ...p, assignedRole: newRole } : p
+    );
+    setLocalPrinters(updated);
+    localStorage.setItem(storageKey, JSON.stringify(updated));
+
+    const target = updated.find((p) => p.systemName === systemName);
+    if (target) {
+      try {
+        await fetch(`/api/shops/${shop.id}/printers/assign-system`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: target.displayName,
+            system_name: target.systemName,
+            type: newRole === 'color' ? 'color' : 'mono',
+          }),
+        });
+      } catch (e) {
+        console.warn('Role update sync deferred:', e);
+      }
+    }
+    showToast(`Printer role updated to ${newRole === 'color' ? 'Color HD' : 'B&W Laser'}.`);
+  };
+
+  const handleRemoveLocalPrinter = async (systemName: string) => {
     if (!shop) return;
     const storageKey = `printspot_local_printers_${shop.id}`;
     const updated = localPrinters.filter((p) => p.systemName !== systemName);
     setLocalPrinters(updated);
     localStorage.setItem(storageKey, JSON.stringify(updated));
-    showToast('Printer removed from local configuration.');
+
+    // Also remove from backend DB if matching printer exists
+    const matchingDbPrinter = printers.find((p) => p.system_name === systemName || p.name === systemName);
+    if (matchingDbPrinter) {
+      try {
+        const res = await fetch(`/api/shops/${shop.id}/printers/${matchingDbPrinter.id}`, {
+          method: 'DELETE',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.printers) {
+            setPrinters(data.printers);
+          }
+        }
+      } catch (delErr) {
+        console.warn('Backend delete deferred:', delErr);
+      }
+    }
+
+    showToast('Printer removed from configuration.');
   };
 
   // Order Queue Actions
@@ -1584,37 +1711,195 @@ export default function ShopDashboardPage() {
         {/* TAB 2: PRINTERS & SPOOLERS (Phase 1B & 1C) */}
         {activeTab === 'printers' && (
           <div className="space-y-4">
+            {/* Modal: Add Printer Manually */}
+            {isManualAddModalOpen && (
+              <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-50 border border-cyan-200 flex items-center justify-center text-[#0e7490]">
+                        <Printer className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900">Add Printer Manually</h3>
+                        <p className="text-[11px] text-slate-500">Connect by system spooler name, IP address, or model</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setIsManualAddModalOpen(false)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleAddManualPrinter} className="space-y-3.5">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Display Name / Counter Label *
+                      </label>
+                      <input
+                        type="text"
+                        value={manualPrinterName}
+                        onChange={(e) => setManualPrinterName(e.target.value)}
+                        placeholder="e.g. Counter Main Mono Laser, Canon Color Desk"
+                        required
+                        className="w-full figma-input px-3 py-2 text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        System Spooler / Device Name (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={manualSystemName}
+                        onChange={(e) => setManualSystemName(e.target.value)}
+                        placeholder="e.g. HP LaserJet Pro M404, or leave empty to use Display Name"
+                        className="w-full figma-input px-3 py-2 text-xs"
+                      />
+                      <span className="text-[10px] text-slate-400 block mt-1">
+                        Exact name in Windows "Printers & Scanners" or network IP.
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 block mb-1">
+                        Assigned Print Role *
+                      </label>
+                      <select
+                        value={manualPrinterRole}
+                        onChange={(e: any) => setManualPrinterRole(e.target.value)}
+                        className="w-full figma-input px-3 py-2 text-xs bg-white"
+                      >
+                        <option value="mono">Black & White (Mono Laser)</option>
+                        <option value="color">Color HD Laser</option>
+                        <option value="any">General / Any Format</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setIsManualAddModalOpen(false)}
+                        className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSavingPrinter || !manualPrinterName.trim()}
+                        className="px-4 py-2 bg-[#0e7490] hover:bg-[#0c627a] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {isSavingPrinter ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        <span>Save & Connect</span>
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
             <div className="figma-card p-5 bg-white border border-slate-200 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              {/* Header with Actions */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
-                  <h2 className="text-sm font-bold text-slate-900">Locally Connected Physical Printers</h2>
+                  <h2 className="text-sm font-bold text-slate-900">Connected Counter Printers</h2>
                   <p className="text-xs text-slate-500">
-                    Recognized from this counter machine and saved in this browser. Virtual drivers (PDF, OneNote) are filtered out.
+                    Recognized from this counter machine and synchronized with your store. Physical and virtual spoolers supported.
                   </p>
                 </div>
-                <button
-                  onClick={handleDetectPrinters}
-                  disabled={isDetectingSystem}
-                  className="px-3.5 py-2 rounded-xl bg-[#0e7490] hover:bg-[#0c627a] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isDetectingSystem ? 'animate-spin' : ''}`} />
-                  <span>{isDetectingSystem ? 'Detecting OS Hardware...' : 'Detect Printers on This PC'}</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => setIsManualAddModalOpen(true)}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#0e7490]" />
+                    <span>+ Add Manually</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDetectPrinters(includeVirtualPrinters)}
+                    disabled={isDetectingSystem}
+                    className="px-3.5 py-2 rounded-xl bg-[#0e7490] hover:bg-[#0c627a] text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isDetectingSystem ? 'animate-spin' : ''}`} />
+                    <span>{isDetectingSystem ? 'Detecting OS Hardware...' : 'Detect Printers on This PC'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Options & Filter Bar */}
+              <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-700 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={includeVirtualPrinters}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      setIncludeVirtualPrinters(val);
+                      handleDetectPrinters(val);
+                    }}
+                    className="rounded border-slate-300 text-[#0e7490] focus:ring-[#0e7490] w-3.5 h-3.5"
+                  />
+                  <span>Include Virtual & Software Drivers (Microsoft Print to PDF, XPS, etc.)</span>
+                </label>
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                  {localPrinters.length} active in counter
+                </span>
               </div>
 
               {/* Connected Local Printers List */}
               <div className="space-y-2.5">
-                <span className="text-xs font-bold text-slate-700 block">
-                  Active Local Printers ({localPrinters.length})
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 block">
+                    Active Configured Printers ({localPrinters.length})
+                  </span>
+                  {localPrinters.length > 0 && (
+                    <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Counter Ready
+                    </span>
+                  )}
+                </div>
 
                 {localPrinters.length === 0 ? (
-                  <div className="p-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-center space-y-2">
-                    <Printer className="w-8 h-8 text-slate-400 mx-auto" />
-                    <p className="text-xs font-bold text-slate-700">No physical printers saved locally yet</p>
-                    <p className="text-[11px] text-slate-500 max-w-md mx-auto">
-                      Click <strong className="text-[#0e7490]">"Detect Printers on This PC"</strong> above to discover USB, Network, or WSD laser printers. Connecting at least one real printer is required before your counter can go online.
-                    </p>
+                  <div className="p-6 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 mx-auto shadow-xs">
+                      <Printer className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">No printers connected to this counter yet</p>
+                      <p className="text-[11px] text-slate-500 max-w-md mx-auto mt-0.5">
+                        Click <strong className="text-[#0e7490]">"Detect Printers on This PC"</strong> to discover local USB, Wi-Fi, or network printers, or add your device manually.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <button
+                        onClick={() => handleDetectPrinters(includeVirtualPrinters)}
+                        className="px-3 py-1.5 rounded-xl bg-[#0e7490] text-white text-xs font-bold hover:bg-[#0c627a] cursor-pointer shadow-xs"
+                      >
+                        Detect OS Printers
+                      </button>
+                      <button
+                        onClick={() => setIsManualAddModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                      >
+                        + Add Manually
+                      </button>
+                      {hasVirtualPrintersOnHost && !includeVirtualPrinters && (
+                        <button
+                          onClick={() => {
+                            setIncludeVirtualPrinters(true);
+                            handleDetectPrinters(true);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-cyan-50 border border-cyan-200 text-[#0e7490] text-xs font-semibold hover:bg-cyan-100 cursor-pointer"
+                        >
+                          Enable Virtual / PDF Drivers
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   localPrinters.map((p) => {
@@ -1631,12 +1916,21 @@ export default function ShopDashboardPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-bold text-slate-900">{p.displayName}</span>
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-200">
-                                {p.assignedRole === 'mono' ? 'B&W Laser' : p.assignedRole === 'color' ? 'Color HD' : 'Any'}
-                              </span>
+                              {/* Clickable Quick Role Switcher */}
+                              <button
+                                onClick={() => handleUpdatePrinterRole(p.systemName, p.assignedRole === 'mono' ? 'color' : 'mono')}
+                                title="Click to toggle role (B&W Laser / Color HD)"
+                                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${
+                                  p.assignedRole === 'color'
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                    : 'bg-cyan-100 text-cyan-900 border-cyan-300 hover:bg-cyan-200'
+                                }`}
+                              >
+                                {p.assignedRole === 'mono' ? 'B&W Laser ▾' : p.assignedRole === 'color' ? 'Color HD ▾' : 'Any ▾'}
+                              </button>
                             </div>
                             <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
-                              Device: {p.systemName} {p.portName ? `• Port: ${p.portName}` : ''}
+                              Device: {p.systemName} {p.portName && p.portName !== 'saved' ? `• Port: ${p.portName}` : ''}
                             </span>
                           </div>
                         </div>
@@ -1654,7 +1948,7 @@ export default function ShopDashboardPage() {
                                 isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                               }`}
                             ></span>
-                            {isOnline ? 'Connected & Ready' : 'Device Not Found on Host'}
+                            {isOnline ? 'Connected & Ready' : 'Spooler Configured'}
                           </span>
 
                           <button
@@ -1672,17 +1966,30 @@ export default function ShopDashboardPage() {
               </div>
 
               {/* Detected Hardware Section */}
-              {systemPrinters.length > 0 && (
-                <div className="mt-6 pt-4 border-t border-slate-100 space-y-3">
+              <div className="mt-6 pt-4 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-xs font-bold text-slate-900">
-                      Detected Physical Devices on this Machine ({systemPrinters.length})
+                      Discovered Host Devices ({systemPrinters.length})
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Select a printer to assign its role and save it locally for job dispatch.
+                      Select any detected device to assign its role and connect it to your counter.
                     </p>
                   </div>
+                  {hasVirtualPrintersOnHost && !includeVirtualPrinters && (
+                    <button
+                      onClick={() => {
+                        setIncludeVirtualPrinters(true);
+                        handleDetectPrinters(true);
+                      }}
+                      className="text-[11px] font-bold text-[#0e7490] hover:underline cursor-pointer"
+                    >
+                      + Show Virtual Drivers
+                    </button>
+                  )}
+                </div>
 
+                {systemPrinters.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {systemPrinters.map((sys) => {
                       const isAlreadySaved = localPrinters.some((lp) => lp.systemName === (sys.name || sys.system_name));
@@ -1702,71 +2009,92 @@ export default function ShopDashboardPage() {
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-900 truncate max-w-[200px]">{sys.name}</span>
-                            {isAlreadySaved ? (
-                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                Saved
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                                Detected
-                              </span>
-                            )}
+                            <div className="flex items-center gap-1.5">
+                              {sys.isVirtual && (
+                                <span className="text-[9px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                  Virtual
+                                </span>
+                              )}
+                              {isAlreadySaved ? (
+                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                  Connected
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                                  Connect ▾
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-[10px] text-slate-500 font-mono block mt-1">
+                          <span className="text-[10px] text-slate-500 font-mono block mt-1 truncate">
                             {sys.driver} {sys.port ? `• ${sys.port}` : ''}
                           </span>
                         </div>
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center text-xs text-slate-500">
+                    No new hardware printers discovered. Click <strong>"Detect Printers on This PC"</strong> above or add a printer with <strong>"+ Add Manually"</strong>.
+                  </div>
+                )}
 
-                  {selectedSystemPrinter && (
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                {/* Selected Device Connection Form */}
+                {selectedSystemPrinter && (
+                  <div className="p-4 rounded-2xl bg-cyan-50/40 border border-cyan-200 space-y-3 mt-3">
+                    <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold text-slate-900">
-                        Configure & Connect: {selectedSystemPrinter.name}
+                        Configure & Connect: <span className="text-[#0e7490]">{selectedSystemPrinter.name}</span>
                       </h4>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-600 block mb-1">Display Label</label>
-                          <input
-                            type="text"
-                            value={customDisplayName}
-                            onChange={(e) => setCustomDisplayName(e.target.value)}
-                            placeholder="e.g. Counter Main Mono Laser"
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0e7490]"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-bold text-slate-600 block mb-1">Print Role</label>
-                          <select
-                            value={customRole}
-                            onChange={(e: any) => setCustomRole(e.target.value)}
-                            className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0e7490]"
-                          >
-                            <option value="mono">Black & White (Mono Laser)</option>
-                            <option value="color">Color HD Laser</option>
-                            <option value="any">General / Any Format</option>
-                          </select>
-                        </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {selectedSystemPrinter.driver}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">Display Label</label>
+                        <input
+                          type="text"
+                          value={customDisplayName}
+                          onChange={(e) => setCustomDisplayName(e.target.value)}
+                          placeholder="e.g. Counter Main Mono Laser"
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0e7490]"
+                        />
                       </div>
-                      <div className="flex justify-end gap-2 pt-2">
-                        <button
-                          onClick={() => setSelectedSystemPrinter(null)}
-                          className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
+                      <div>
+                        <label className="text-[11px] font-bold text-slate-600 block mb-1">Print Role</label>
+                        <select
+                          value={customRole}
+                          onChange={(e: any) => setCustomRole(e.target.value)}
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-[#0e7490]"
                         >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => handleSaveLocalPrinter(selectedSystemPrinter, customRole, customDisplayName)}
-                          className="px-4 py-1.5 rounded-xl bg-[#0e7490] hover:bg-[#0c627a] text-white text-xs font-bold shadow-sm cursor-pointer"
-                        >
-                          Save & Connect Printer
-                        </button>
+                          <option value="mono">Black & White (Mono Laser)</option>
+                          <option value="color">Color HD Laser</option>
+                          <option value="any">General / Any Format</option>
+                        </select>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        onClick={() => setSelectedSystemPrinter(null)}
+                        className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleSaveLocalPrinter(selectedSystemPrinter, customRole, customDisplayName)}
+                        disabled={isSavingPrinter}
+                        className="px-4 py-1.5 rounded-xl bg-[#0e7490] hover:bg-[#0c627a] text-white text-xs font-bold shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        {isSavingPrinter ? <RotateCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        <span>Save & Connect Printer</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}

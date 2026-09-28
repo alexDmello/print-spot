@@ -6,6 +6,8 @@ import { queueEngine } from '../redis/queueEngine';
 import { removeFile } from '../services/storageService';
 import { assignPrintersToJob } from '../services/printerRoutingService';
 
+import { v4 as uuidv4 } from 'uuid';
+
 let io: Server | null = null;
 
 interface ShopLiveEntry {
@@ -17,6 +19,14 @@ interface ShopLiveEntry {
 }
 
 const shopLiveStatus = new Map<string, ShopLiveEntry>();
+const agentPrintersMap = new Map<string, any[]>();
+
+/**
+ * Returns printers reported by a connected Printer Agent for a given shop
+ */
+export function getAgentPrinters(shopId: string): any[] {
+  return agentPrintersMap.get(shopId) || [];
+}
 
 /**
  * Checks whether a shop has an active dashboard connection with physical printers
@@ -231,14 +241,39 @@ export function initSocketServer(httpServer: HttpServer): Server {
         message: 'Printer agent connected and ready for jobs.',
       });
 
-      // Update printers in DB if agent reported system printers
+      // Update or insert printers in DB if agent reported system printers
       if (data.printers && Array.isArray(data.printers)) {
+        agentPrintersMap.set(data.shopId, data.printers);
         for (const p of data.printers) {
-          await query(
-            `UPDATE printers SET status = $1, system_name = $2 WHERE shop_id = $3 AND id = $4`,
-            [p.status || 'online', p.systemName || p.name, data.shopId, p.id]
+          const sysName = p.systemName || p.name;
+          const pName = p.name || sysName;
+          const pType = p.type === 'color' ? 'color' : 'mono';
+          const pStatus = p.status || 'online';
+
+          const existing = await query(
+            'SELECT id FROM printers WHERE shop_id = $1 AND (system_name = $2 OR name = $3)',
+            [data.shopId, sysName, pName]
           );
+
+          if (existing.rowCount > 0) {
+            await query(
+              'UPDATE printers SET status = $1, system_name = $2 WHERE id = $3',
+              [pStatus, sysName, existing.rows[0].id]
+            );
+          } else {
+            const newId = `printer_${uuidv4().substring(0, 8)}`;
+            await query(
+              'INSERT INTO printers (id, shop_id, name, type, status, system_name) VALUES ($1, $2, $3, $4, $5, $6)',
+              [newId, data.shopId, pName, pType, pStatus, sysName]
+            );
+          }
         }
+
+        const allPrinters = await query(
+          'SELECT id, shop_id, name, type, status, system_name FROM printers WHERE shop_id = $1',
+          [data.shopId]
+        );
+        io?.to(`shop:${data.shopId}`).emit('printers_updated', allPrinters.rows);
       }
 
       // Check if there are waiting jobs to immediately dispatch to agent
@@ -320,17 +355,31 @@ export function initSocketServer(httpServer: HttpServer): Server {
     // Printer Agent reports printer status heartbeat
     socket.on('agent_printer_heartbeat', async (data: {
       shopId: string;
-      printers: Array<{ id: string; name: string; status: string }>;
+      printers: Array<{ id: string; name: string; status: string; systemName?: string; type?: string }>;
     }) => {
       try {
-        for (const p of data.printers) {
-          await query(
-            `UPDATE printers SET status = $1 WHERE shop_id = $2 AND (id = $3 OR name = $4)`,
-            [p.status, data.shopId, p.id, p.name]
-          );
+        if (data.printers && Array.isArray(data.printers)) {
+          agentPrintersMap.set(data.shopId, data.printers);
+          for (const p of data.printers) {
+            const sysName = p.systemName || p.name;
+            const pName = p.name || sysName;
+            const pStatus = p.status || 'online';
+
+            const existing = await query(
+              'SELECT id FROM printers WHERE shop_id = $1 AND (system_name = $2 OR name = $3)',
+              [data.shopId, sysName, pName]
+            );
+
+            if (existing.rowCount > 0) {
+              await query(
+                'UPDATE printers SET status = $1, system_name = $2 WHERE id = $3',
+                [pStatus, sysName, existing.rows[0].id]
+              );
+            }
+          }
+          const printersRes = await query('SELECT * FROM printers WHERE shop_id = $1', [data.shopId]);
+          io?.to(`shop:${data.shopId}`).emit('printers_updated', printersRes.rows);
         }
-        const printersRes = await query('SELECT * FROM printers WHERE shop_id = $1', [data.shopId]);
-        io?.to(`shop:${data.shopId}`).emit('printers_updated', printersRes.rows);
       } catch (err) {
         console.error('[Socket] Error updating printer heartbeat:', err);
       }

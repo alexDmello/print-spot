@@ -69,6 +69,25 @@ router.get('/me', shopAuthService_1.shopAuthMiddleware, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// Public Routing Configuration (for dynamic QR standee generation)
+router.get('/routing/config', async (_req, res) => {
+    try {
+        const result = await (0, db_1.query)('SELECT value FROM platform_settings WHERE key = $1', ['routing']);
+        if (result.rowCount === 0) {
+            res.json({
+                scheme: 'path',
+                baseUrl: '',
+                domain: 'mellod.in',
+            });
+            return;
+        }
+        const val = typeof result.rows[0].value === 'string' ? JSON.parse(result.rows[0].value) : result.rows[0].value;
+        res.json(val);
+    }
+    catch (err) {
+        res.json({ scheme: 'path', baseUrl: '', domain: 'mellod.in' });
+    }
+});
 // Public Counter Verification (for Customer QR Scan)
 router.get('/:id/public', async (req, res) => {
     try {
@@ -164,6 +183,26 @@ router.put('/:id/toggle-open', shopAuthService_1.shopAuthMiddleware, async (req,
     }
     catch (err) {
         console.error('[Shop Toggle Open] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+// Explicit Close Counter Endpoint (Supports web beacons, unload events, and API calls)
+router.post(['/:id/close', '/:id/close-beacon'], async (req, res) => {
+    try {
+        const { id } = req.params;
+        await (0, db_1.query)('UPDATE shops SET is_open = false WHERE id = $1', [id]);
+        const updatedShop = await getShopWithDetails(id);
+        const io = (0, socketHandler_1.getSocketServer)();
+        if (io) {
+            io.to(`shop:${id}`).emit('shop_open_status_changed', { shopId: id, is_open: false });
+            if (updatedShop) {
+                io.emit('shop_updated', updatedShop);
+            }
+        }
+        res.json({ success: true, message: 'Shop counter closed successfully.', is_open: false });
+    }
+    catch (err) {
+        console.error('[Shop Close] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -328,6 +367,82 @@ router.get('/:id/stats', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+// Comprehensive Functional Analytics for Shop Dashboard
+router.get('/:id/analytics', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const range = req.query.range || 'today';
+        let dateFilter = '(completed_at >= CURRENT_DATE OR created_at >= CURRENT_DATE)';
+        if (range === 'week') {
+            dateFilter = `(completed_at >= CURRENT_DATE - INTERVAL '7 days' OR created_at >= CURRENT_DATE - INTERVAL '7 days')`;
+        }
+        else if (range === 'month') {
+            dateFilter = `(completed_at >= CURRENT_DATE - INTERVAL '30 days' OR created_at >= CURRENT_DATE - INTERVAL '30 days')`;
+        }
+        else if (range === 'all') {
+            dateFilter = '1=1';
+        }
+        // Revenue and order counts
+        const overviewRes = await (0, db_1.query)(`SELECT 
+         COUNT(*) as total_orders,
+         COUNT(CASE WHEN status IN ('ready', 'picked_up') THEN 1 END) as completed_orders,
+         COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_orders,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN price ELSE 0 END), 0) as gross_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') AND payment_method IN ('counter_cash') THEN price ELSE 0 END), 0) as cash_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') AND payment_method NOT IN ('counter_cash') THEN price ELSE 0 END), 0) as online_revenue,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN platform_fee ELSE 0 END), 0) as platform_fees,
+         COALESCE(SUM(CASE WHEN status IN ('ready', 'picked_up') THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as total_sheets
+       FROM print_jobs 
+       WHERE shop_id = $1 AND ${dateFilter}`, [id]);
+        // Color mode breakdown
+        const colorBreakdownRes = await (0, db_1.query)(`SELECT 
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = true THEN 1 ELSE 0 END), 0) as color_orders,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = false OR settings->>'color' IS NULL THEN 1 ELSE 0 END), 0) as mono_orders,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = true THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as color_sheets,
+         COALESCE(SUM(CASE WHEN (settings->>'color')::boolean = false OR settings->>'color' IS NULL THEN page_count * COALESCE((settings->>'copies')::int, 1) ELSE 0 END), 0) as mono_sheets
+       FROM print_jobs 
+       WHERE shop_id = $1 AND status IN ('ready', 'picked_up') AND ${dateFilter}`, [id]);
+        // Unsettled cash fee from shop
+        const shopRes = await (0, db_1.query)('SELECT unsettled_cash_fee FROM shops WHERE id = $1', [id]);
+        const unsettledCashFee = parseFloat(shopRes.rows[0]?.unsettled_cash_fee || '0');
+        // Recent 10 jobs
+        const recentJobsRes = await (0, db_1.query)(`SELECT id, token_code, file_name, price, payment_method, platform_fee, status, created_at, completed_at,
+              settings->>'color' as is_color, page_count
+       FROM print_jobs 
+       WHERE shop_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT 10`, [id]);
+        const ov = overviewRes.rows[0] || {};
+        const cb = colorBreakdownRes.rows[0] || {};
+        const grossRev = parseFloat(ov.gross_revenue || '0');
+        const cashRev = parseFloat(ov.cash_revenue || '0');
+        const onlineRev = parseFloat(ov.online_revenue || '0');
+        const platformFees = parseFloat(ov.platform_fees || '0');
+        const netPayout = Math.max(0, grossRev - platformFees);
+        res.json({
+            range,
+            grossRevenue: grossRev,
+            cashRevenue: cashRev,
+            onlineRevenue: onlineRev,
+            platformFees: platformFees,
+            unsettledCashFee: unsettledCashFee,
+            netPayout: netPayout,
+            completedOrders: parseInt(ov.completed_orders || '0', 10),
+            totalOrders: parseInt(ov.total_orders || '0', 10),
+            failedOrders: parseInt(ov.failed_orders || '0', 10),
+            totalSheets: parseInt(ov.total_sheets || '0', 10),
+            colorOrders: parseInt(cb.color_orders || '0', 10),
+            monoOrders: parseInt(cb.mono_orders || '0', 10),
+            colorSheets: parseInt(cb.color_sheets || '0', 10),
+            monoSheets: parseInt(cb.mono_sheets || '0', 10),
+            recentTransactions: recentJobsRes.rows,
+        });
+    }
+    catch (err) {
+        console.error('[Shops] Error fetching shop analytics:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
 // ==========================================
 // 6. MULTI-DEVICE / PRINTER MANAGEMENT CRUD
 // ==========================================
@@ -461,62 +576,175 @@ router.post('/:id/printers/assign', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-// Detect real connected system printers from host OS
+// Helper for robust Windows printer detection with multi-tier fallback
+async function detectWindowsPrinters() {
+    // Strategy 1: Get-Printer (PowerShell PrintManagement module)
+    try {
+        const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+        const { stdout } = await execAsync(cmd, { timeout: 6000 });
+        const trimmed = (stdout || '').trim();
+        if (trimmed) {
+            const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+                ? trimmed.indexOf('[')
+                : trimmed.indexOf('{');
+            if (jsonStart !== -1) {
+                const parsed = JSON.parse(trimmed.slice(jsonStart));
+                const list = Array.isArray(parsed) ? parsed : [parsed];
+                if (list.length > 0)
+                    return list;
+            }
+        }
+    }
+    catch (err1) {
+        console.warn('[Printer Detection] Strategy 1 (Get-Printer) failed, trying Get-CimInstance:', err1?.message || err1);
+    }
+    // Strategy 2: Get-CimInstance Win32_Printer (WMI/CIM - available on all Windows editions)
+    try {
+        const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus, Default | ConvertTo-Json -Compress"`;
+        const { stdout } = await execAsync(cmd, { timeout: 6000 });
+        const trimmed = (stdout || '').trim();
+        if (trimmed) {
+            const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+                ? trimmed.indexOf('[')
+                : trimmed.indexOf('{');
+            if (jsonStart !== -1) {
+                const parsed = JSON.parse(trimmed.slice(jsonStart));
+                const list = Array.isArray(parsed) ? parsed : [parsed];
+                if (list.length > 0)
+                    return list;
+            }
+        }
+    }
+    catch (err2) {
+        console.warn('[Printer Detection] Strategy 2 (Get-CimInstance) failed, trying Get-WmiObject:', err2?.message || err2);
+    }
+    // Strategy 3: Get-WmiObject Win32_Printer (legacy Windows fallback)
+    try {
+        const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Printer | Select-Object Name, DriverName, PortName, PrinterStatus | ConvertTo-Json -Compress"`;
+        const { stdout } = await execAsync(cmd, { timeout: 6000 });
+        const trimmed = (stdout || '').trim();
+        if (trimmed) {
+            const jsonStart = trimmed.indexOf('[') !== -1 && (trimmed.indexOf('{') === -1 || trimmed.indexOf('[') < trimmed.indexOf('{'))
+                ? trimmed.indexOf('[')
+                : trimmed.indexOf('{');
+            if (jsonStart !== -1) {
+                const parsed = JSON.parse(trimmed.slice(jsonStart));
+                const list = Array.isArray(parsed) ? parsed : [parsed];
+                if (list.length > 0)
+                    return list;
+            }
+        }
+    }
+    catch (err3) {
+        console.warn('[Printer Detection] Strategy 3 (Get-WmiObject) failed:', err3?.message || err3);
+    }
+    return [];
+}
+// Detect real connected system printers from host OS or connected Printer Agent
 router.get('/:id/printers/system-hardware', async (req, res) => {
     try {
+        const { id } = req.params;
+        const includeVirtual = req.query.includeVirtual === 'true' || req.query.include_virtual === 'true';
         const isWindows = process.platform === 'win32';
-        let systemPrinters = [];
-        if (isWindows) {
-            try {
-                const cmd = `powershell -NoProfile -Command "Get-Printer | Select-Object Name, Type, DriverName, PortName, PrinterStatus | ConvertTo-Json"`;
-                const { stdout } = await execAsync(cmd);
-                if (stdout && stdout.trim()) {
-                    const parsed = JSON.parse(stdout);
-                    const list = Array.isArray(parsed) ? parsed : [parsed];
-                    const physicalList = list.filter((p) => !(0, printerFilter_1.isVirtualPrinter)(p.Name, p.DriverName, p.PortName));
-                    systemPrinters = physicalList.map((p) => ({
-                        name: p.Name || 'Unknown Device',
-                        system_name: p.Name || 'Unknown Device',
-                        driver: p.DriverName || 'System Spooler Driver',
-                        port: p.PortName || '',
-                        status: p.PrinterStatus && p.PrinterStatus.toString().toLowerCase().includes('offline') ? 'offline' : 'online',
-                    }));
+        const detectedAllPrinters = [];
+        // 1. Check if an Agent has reported connected printers for this shop
+        try {
+            const agentPrinters = (0, socketHandler_1.getAgentPrinters)(id);
+            if (agentPrinters && agentPrinters.length > 0) {
+                for (const ap of agentPrinters) {
+                    const sysName = ap.systemName || ap.name || 'Printer';
+                    const isVirt = (0, printerFilter_1.isVirtualPrinter)(sysName, ap.driver, ap.port);
+                    detectedAllPrinters.push({
+                        name: ap.name || sysName,
+                        system_name: sysName,
+                        driver: ap.driver || 'Printer Agent Spooler',
+                        port: ap.port || 'agent',
+                        status: ap.status || 'online',
+                        isVirtual: isVirt,
+                        source: 'agent',
+                    });
                 }
             }
-            catch (execErr) {
-                console.warn('[System Printer Detection] PowerShell Get-Printer failed:', execErr);
+        }
+        catch (agentErr) {
+            console.warn('[System Printer Detection] Error reading agent printers:', agentErr);
+        }
+        // 2. Query Host OS Printers (Windows / Linux CUPS)
+        if (isWindows) {
+            const winList = await detectWindowsPrinters();
+            for (const p of winList) {
+                const name = p.Name || 'Unknown Device';
+                const driver = p.DriverName || 'System Spooler Driver';
+                const port = p.PortName || '';
+                const isVirt = (0, printerFilter_1.isVirtualPrinter)(name, driver, port);
+                const statusVal = p.PrinterStatus !== undefined && p.PrinterStatus !== null ? p.PrinterStatus.toString().toLowerCase() : '';
+                const isOffline = statusVal.includes('offline') || statusVal === '7' || statusVal === '8';
+                detectedAllPrinters.push({
+                    name,
+                    system_name: name,
+                    driver,
+                    port,
+                    status: isOffline ? 'offline' : 'online',
+                    isVirtual: isVirt,
+                    source: 'os_host',
+                });
             }
         }
         else {
             // Unix / CUPS detection fallback
             try {
-                const { stdout } = await execAsync('lpstat -p');
-                const lines = stdout.split('\n');
+                const { stdout } = await execAsync('lpstat -p', { timeout: 4000 });
+                const lines = (stdout || '').split('\n');
                 for (const line of lines) {
                     const match = line.match(/^printer (\S+)/);
                     if (match) {
                         const name = match[1];
-                        if (!(0, printerFilter_1.isVirtualPrinter)(name)) {
-                            systemPrinters.push({
-                                name,
-                                system_name: name,
-                                driver: 'CUPS Native Driver',
-                                port: 'cups',
-                                status: 'online',
-                            });
-                        }
+                        const isVirt = (0, printerFilter_1.isVirtualPrinter)(name);
+                        detectedAllPrinters.push({
+                            name,
+                            system_name: name,
+                            driver: 'CUPS Native Driver',
+                            port: 'cups',
+                            status: line.includes('disabled') ? 'offline' : 'online',
+                            isVirtual: isVirt,
+                            source: 'cups',
+                        });
                     }
                 }
             }
             catch (lpErr) {
-                console.warn('[System Printer Detection] lpstat failed:', lpErr);
+                // Expected when running on cloud serverless container without CUPS
             }
         }
+        // Deduplicate by system_name
+        const seen = new Set();
+        const uniquePrinters = [];
+        for (const p of detectedAllPrinters) {
+            const key = (p.system_name || p.name).toLowerCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniquePrinters.push(p);
+            }
+        }
+        // Classify into Physical vs Virtual
+        const physicalPrinters = uniquePrinters.filter((p) => !p.isVirtual);
+        const virtualPrinters = uniquePrinters.filter((p) => p.isVirtual);
+        const resultList = includeVirtual ? uniquePrinters : physicalPrinters;
+        // Fetch existing printers already registered in DB for this shop
+        const dbPrintersRes = await (0, db_1.query)('SELECT id, shop_id, name, type, status, system_name FROM printers WHERE shop_id = $1 ORDER BY created_at ASC', [id]);
         res.json({
             success: true,
             platform: process.platform,
-            printers: systemPrinters,
-            message: systemPrinters.length === 0 ? 'No physical printers detected.' : undefined,
+            printers: resultList,
+            physicalCount: physicalPrinters.length,
+            virtualCount: virtualPrinters.length,
+            hasVirtualPrinters: virtualPrinters.length > 0,
+            databasePrinters: dbPrintersRes.rows,
+            message: resultList.length === 0
+                ? virtualPrinters.length > 0
+                    ? 'No physical hardware printers detected. Virtual/PDF drivers are available.'
+                    : 'No printers detected on this computer.'
+                : undefined,
         });
     }
     catch (err) {
